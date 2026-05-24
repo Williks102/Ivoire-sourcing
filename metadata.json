@@ -1,0 +1,6 @@
+{
+  "name": "IvoireSource",
+  "description": "Plateforme ivoirienne de sourcing de personnel de maison (Nounous, Chauffeurs, Employés). Système de vérification d'identité et de mise en relation sécurisée.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

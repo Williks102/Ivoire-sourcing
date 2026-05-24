@@ -1,0 +1,92 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user profile (Employer or Candidate)",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "role": { "type": "string", "enum": ["employer", "candidate", "admin"] },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "location": { "type": "string" },
+        "bio": { "type": "string" },
+        "skills": { "type": "array", "items": { "type": "string" } },
+        "isVerified": { "type": "boolean" },
+        "isPremium": { "type": "boolean" },
+        "averageRating": { "type": "number" },
+        "reviewCount": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "role", "displayName", "email"]
+    },
+    "Job": {
+      "title": "Job",
+      "description": "A job posting created by an employer",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "employerId": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "category": { "type": "string", "enum": ["nounou", "chauffeur", "boy", "cuisinier", "autre"] },
+        "location": { "type": "string" },
+        "salaryRange": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected", "closed"] },
+        "isPremium": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["employerId", "title", "description", "category", "location"]
+    },
+    "Application": {
+      "title": "Application",
+      "description": "An application submitted by a candidate for a job",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "jobId": { "type": "string" },
+        "candidateId": { "type": "string" },
+        "employerId": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "rejected"] },
+        "message": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["jobId", "candidateId", "employerId", "status"]
+    },
+    "Review": {
+      "title": "Review",
+      "description": "A review given to a candidate after a job is completed",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "targetUserId": { "type": "string" },
+        "authorId": { "type": "string" },
+        "jobId": { "type": "string" },
+        "rating": { "type": "number" },
+        "comment": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["targetUserId", "authorId", "rating"]
+    },
+    "Unlock": {
+      "title": "Unlock",
+      "description": "A purchase record unlocking direct candidate coordinates",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "employerId": { "type": "string" },
+        "candidateId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["employerId", "candidateId", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": { "schema": "User", "description": "User profiles" },
+    "/jobs/{jobId}": { "schema": "Job", "description": "Job listings" },
+    "/applications/{appId}": { "schema": "Application", "description": "Job applications" },
+    "/reviews/{reviewId}": { "schema": "Review", "description": "User reviews" },
+    "/unlocks/{unlockId}": { "schema": "Unlock", "description": "Unlocked candidate profiles" }
+  }
+}

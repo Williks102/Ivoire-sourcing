@@ -1,0 +1,70 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Collect roles for simpler lookup
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function hasRole(role) {
+      return isSignedIn() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+             getUserData().role == role;
+    }
+
+    function isAdmin() {
+      return hasRole('admin');
+    }
+
+    function isVerified() {
+      return isSignedIn() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+             getUserData().isVerified == true;
+    }
+
+    match /users/{userId} {
+      allow read: if isSignedIn() || resource.data.role == 'candidate';
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId) && (
+        // Allow updating everything EXCEPT sensitive fields like verification status
+        // and allow changing role for the prototype feature
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isVerified', 'uid'])
+      ) || isAdmin();
+    }
+
+    match /jobs/{jobId} {
+      allow read: if true;
+      allow create: if isSignedIn() && (hasRole('employer') || isAdmin());
+      allow update: if isAdmin() || (isOwner(resource.data.employerId) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['status', 'isPremium']));
+      allow delete: if isAdmin() || isOwner(resource.data.employerId);
+    }
+
+    match /applications/{appId} {
+      allow read: if isSignedIn() && (isOwner(resource.data.candidateId) || isOwner(resource.data.employerId) || isAdmin());
+      allow create: if isSignedIn() && hasRole('candidate') && request.resource.data.candidateId == request.auth.uid;
+      allow update: if isSignedIn() && (isOwner(resource.data.candidateId) || isOwner(resource.data.employerId) || isAdmin());
+    }
+
+    match /reviews/{reviewId} {
+      allow read: if true;
+      allow create: if isSignedIn() && request.resource.data.authorId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    match /unlocks/{unlockId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

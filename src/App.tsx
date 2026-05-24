@@ -1,0 +1,469 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  onAuthStateChanged, 
+  signInWithPopup, 
+  signOut, 
+  User as FirebaseUser 
+} from 'firebase/auth';
+import { 
+  collection, 
+  query, 
+  where, 
+  getDocs, 
+  setDoc, 
+  doc, 
+  getDoc,
+  addDoc
+} from 'firebase/firestore';
+import { motion, AnimatePresence } from 'motion/react';
+import { 
+  PlusCircle, 
+  LogOut, 
+  Menu, 
+  X, 
+  AlertCircle,
+  Search as SearchIcon,
+  CheckCircle2,
+  Sparkles,
+  ArrowRight,
+  ShieldCheck,
+  Calendar,
+  MapPin,
+  Briefcase,
+  FileCheck
+} from 'lucide-react';
+import { auth, db, googleProvider } from './lib/firebase';
+import { UserProfile, JobPost, UserRole } from './types';
+import { LandingView } from './components/LandingView';
+import { JobListView, JobDetailView } from './components/JobListView';
+import { PostJobView } from './components/PostJobView';
+import { DashboardView } from './components/DashboardView';
+import { ApplicationSuccessView } from './components/ApplicationSuccessView';
+import { ApplicationFormModal } from './components/ApplicationFormModal';
+
+export default function App() {
+  const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [isOffline, setIsOffline] = useState(false);
+  const [view, setView] = useState<'landing' | 'jobs' | 'dashboard' | 'post-job'>('landing');
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<string>('');
+  const [selectedCity, setSelectedCity] = useState<string>('');
+  const [jobs, setJobs] = useState<JobPost[]>([]);
+  const [selectedJob, setSelectedJob] = useState<JobPost | null>(null);
+  const [dashboardTab, setDashboardTab] = useState<'overview' | 'verification' | 'my-jobs' | 'applications' | 'admin' | 'browse-candidates'>('overview');
+  
+  // States for application confirmation
+  const [showApplySuccess, setShowApplySuccess] = useState(false);
+  const [successJob, setSuccessJob] = useState<JobPost | null>(null);
+  const [applyingJob, setApplyingJob] = useState<JobPost | null>(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setLoading(false);
+    }, 8000);
+
+    const unsubscribe = onAuthStateChanged(auth, async (u) => {
+      setUser(u);
+      try {
+        if (u) {
+          const docRef = doc(db, 'users', u.uid);
+          const docSnap = await getDoc(docRef);
+          if (docSnap.exists()) {
+            setProfile(docSnap.data() as UserProfile);
+          }
+        } else {
+          setProfile(null);
+        }
+      } catch (err) {
+        console.error("Auth init/Profile fetch error:", err);
+        setIsOffline(true);
+      } finally {
+        setLoading(false);
+        clearTimeout(timer);
+      }
+    });
+    return () => {
+      unsubscribe();
+      clearTimeout(timer);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!loading && !user && (view === 'dashboard' || view === 'post-job')) {
+      setView('landing');
+    }
+  }, [user, view, loading]);
+
+  useEffect(() => {
+    fetchJobs();
+  }, [selectedCategory, selectedCity]);
+
+  const fetchJobs = async () => {
+    try {
+      let q = query(collection(db, 'jobs'), where('status', '==', 'approved'));
+      
+      if (selectedCategory) {
+        q = query(collection(db, 'jobs'), where('status', '==', 'approved'), where('category', '==', selectedCategory));
+      }
+      
+      const snap = await getDocs(q);
+      const fetchedJobs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as JobPost));
+      
+      fetchedJobs.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+      if (selectedCity) {
+        setJobs(fetchedJobs.filter(j => j.location === selectedCity));
+      } else {
+        setJobs(fetchedJobs);
+      }
+      setIsOffline(false);
+    } catch (err: any) {
+      console.error("Error fetching jobs:", err);
+      if (err.message?.includes('offline') || err.code === 'unavailable') {
+        setIsOffline(true);
+      }
+    }
+  };
+
+  const handleLogin = async (role: UserRole) => {
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      const u = result.user;
+      
+      const docRef = doc(db, 'users', u.uid);
+      const docSnap = await getDoc(docRef);
+      
+      if (!docSnap.exists()) {
+        const newProfile: UserProfile = {
+          uid: u.uid,
+          role,
+          displayName: u.displayName || 'Utilisateur',
+          email: u.email || '',
+          photoURL: u.photoURL || '',
+          skills: [],
+          isVerified: false,
+          isPremium: false,
+          averageRating: 0,
+          reviewCount: 0,
+          createdAt: new Date().toISOString()
+        };
+        await setDoc(docRef, newProfile);
+        setProfile(newProfile);
+      } else {
+        const existingProfile = docSnap.data() as UserProfile;
+        if (existingProfile.role !== role) {
+          const updatedProfile = { ...existingProfile, role: role };
+          await setDoc(docRef, updatedProfile);
+          setProfile(updatedProfile);
+        } else {
+          setProfile(existingProfile);
+        }
+      }
+      setView('dashboard');
+    } catch (err: any) {
+      if (err.code === 'auth/popup-closed-by-user') {
+        console.log("Connexion annulée par l'utilisateur.");
+      } else {
+        console.error("Erreur de connexion:", err);
+      }
+    }
+  };
+
+  const seedData = async () => {
+    if (jobs.length > 0) return;
+    const demoJobs: Omit<JobPost, 'id'>[] = [
+      {
+        employerId: 'system',
+        title: 'Nounou Plein Temps (Cocody)',
+        description: 'Recherche nounou expérimentée pour garde de deux jumeaux de 2 ans. Logée ou non-logée. Références exigées.',
+        category: 'nounou',
+        location: 'Abidjan',
+        salaryRange: '120 000',
+        status: 'approved',
+        isPremium: true,
+        createdAt: new Date().toISOString()
+      },
+      {
+         employerId: 'system',
+         title: 'Chauffeur Professionnel VTC',
+         description: 'Besoin d un chauffeur maitrisant la zone de Marcory et Plateau. Conduite défensive exigée.',
+         category: 'chauffeur',
+         location: 'Abidjan',
+         salaryRange: '150 000',
+         status: 'approved',
+         isPremium: false,
+         createdAt: new Date().toISOString()
+      }
+    ];
+    
+    if (!user) {
+      setJobs(demoJobs.map((j, i) => ({ id: `demo-${i}`, ...j } as JobPost)));
+      return;
+    }
+
+    try {
+      for (const job of demoJobs) {
+        await addDoc(collection(db, 'jobs'), job);
+      }
+      await fetchJobs();
+    } catch (err) {
+      console.error("Seeding failed (permissions?), showing local data:", err);
+      setJobs(demoJobs.map((j, i) => ({ id: `demo-${i}`, ...j } as JobPost)));
+    }
+  };
+
+  const handleApply = async (jobId: string, employerId: string) => {
+    if (!user) {
+      handleLogin('candidate');
+      return;
+    }
+    if (profile?.role !== 'candidate') {
+      alert("Seuls les candidats peuvent postuler aux offres.");
+      return;
+    }
+    const targetJob = jobs.find(j => j.id === jobId) || selectedJob;
+    if (targetJob) {
+      setApplyingJob(targetJob);
+    }
+  };
+
+  const submitApplication = async (data: {
+    candidateName: string;
+    photoURL: string;
+    experienceYears: number;
+    cvName?: string;
+    message: string;
+  }) => {
+    if (!user || !applyingJob) return;
+    try {
+      await addDoc(collection(db, 'applications'), {
+        jobId: applyingJob.id,
+        employerId: applyingJob.employerId,
+        candidateId: user.uid,
+        status: 'pending',
+        message: data.message,
+        candidateName: data.candidateName,
+        photoURL: data.photoURL,
+        experienceYears: Number(data.experienceYears),
+        cvName: data.cvName || '',
+        createdAt: new Date().toISOString()
+      });
+      setSuccessJob(applyingJob);
+      setApplyingJob(null);
+      setShowApplySuccess(true);
+    } catch (err) {
+      console.error("Submitting application failed:", err);
+    }
+  };
+
+  if (loading) return (
+    <div className="h-screen w-full flex items-center justify-center bg-slate-50">
+      <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-emerald-600"></div>
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans flex flex-col">
+      {/* Offline Banner */}
+      {isOffline && (
+        <div className="bg-amber-500 text-white px-4 py-2 text-center text-xs font-bold flex items-center justify-center gap-2">
+          <AlertCircle className="h-4 w-4" />
+          Note: Connexion à la base de données limitée. Certaines fonctions peuvent ne pas fonctionner.
+          <button onClick={() => fetchJobs()} className="underline ml-2">Réessayer</button>
+        </div>
+      )}
+      {/* Navigation */}
+      {view !== 'dashboard' && (
+        <nav className="sticky top-0 z-50 bg-white border-b border-slate-200 px-4 md:px-8 flex items-center justify-between h-16 shrink-0">
+          <div className="flex items-center gap-2 cursor-pointer" onClick={() => { setView('landing'); setIsMenuOpen(false); }}>
+            <div className="w-8 h-8 bg-emerald-600 rounded-lg flex items-center justify-center text-white font-bold text-xl">I</div>
+            <span className="text-xl font-bold tracking-tight text-slate-800">Ivoire<span className="text-emerald-600">Source</span></span>
+          </div>
+          
+          <div className="hidden md:flex flex-1 max-w-xl px-12">
+            <div className="relative flex items-center bg-slate-100 rounded-full px-4 py-1.5 border border-transparent focus-within:border-emerald-500 focus-within:bg-white transition-all w-full">
+              <SearchIcon className="w-4 h-4 text-slate-400" />
+              <input 
+                type="text" 
+                placeholder="Rechercher un service..." 
+                className="bg-transparent border-none focus:ring-0 text-sm w-full px-2 outline-none" 
+              />
+            </div>
+          </div>
+
+          <div className="hidden md:flex items-center gap-6">
+            <button onClick={() => setView('jobs')} className="text-slate-600 text-sm font-medium hover:text-emerald-600 transition-colors">Offres</button>
+            {user && (
+              <button onClick={() => setView('dashboard')} className="text-slate-600 text-sm font-medium hover:text-emerald-600 transition-colors">Tableau de bord</button>
+            )}
+            {profile?.role === 'employer' && (
+              <button onClick={() => setView('post-job')} className="text-slate-900 bg-emerald-50 text-emerald-700 px-4 py-2 rounded-lg text-xs font-bold hover:bg-emerald-100 transition-all">Publier une offre</button>
+            )}
+            
+            {user ? (
+              <div className="flex items-center gap-4">
+                {profile?.role === 'admin' && (
+                  <span className="text-[10px] font-extrabold text-[#e11d48] border border-rose-300 bg-rose-50 px-2 py-0.5 rounded-full uppercase tracking-wider">ADMIN</span>
+                )}
+                <button onClick={() => setView('dashboard')} className="w-10 h-10 bg-slate-200 rounded-full border-2 border-white shadow-sm overflow-hidden">
+                  <img src={profile?.photoURL || 'https://via.placeholder.com/40'} alt="Profile" className="w-full h-full object-cover" />
+                </button>
+                <button onClick={() => signOut(auth)} className="text-slate-400 hover:text-red-600 transition-colors">
+                  <LogOut className="h-4 w-4" />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-4">
+                <button onClick={() => handleLogin('admin')} className="text-rose-500 text-xs font-bold hover:text-rose-600 transition-colors border border-rose-100 bg-rose-50/40 px-3 py-1.5 rounded-xl uppercase tracking-wider">Admin</button>
+                <button onClick={() => handleLogin('candidate')} className="text-slate-600 text-sm font-medium hover:text-emerald-600">Postuler</button>
+                <button onClick={() => handleLogin('employer')} className="bg-slate-900 text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-slate-800 transition-all shadow-md">Recruter</button>
+              </div>
+            )}
+          </div>
+
+          {/* Mobile Menu Toggle */}
+          <button onClick={() => setIsMenuOpen(!isMenuOpen)} className="md:hidden p-2 text-slate-600">
+            {isMenuOpen ? <X /> : <Menu />}
+          </button>
+        </nav>
+      )}
+
+      {/* Mobile Menu Overlay */}
+      <AnimatePresence>
+        {isMenuOpen && (
+          <motion.div 
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="fixed inset-0 top-16 z-40 bg-white md:hidden p-6 flex flex-col gap-6"
+          >
+            <button onClick={() => { setView('jobs'); setIsMenuOpen(false); }} className="text-left text-lg font-bold text-slate-800 border-b border-slate-50 pb-4">Trouver des offres</button>
+            {profile?.role === 'employer' && (
+               <button onClick={() => { setView('post-job'); setIsMenuOpen(false); }} className="text-left text-lg font-bold text-slate-800 border-b border-slate-50 pb-4">Publier une annonce</button>
+            )}
+            {profile?.role === 'admin' && (
+               <button onClick={() => { setView('dashboard'); setDashboardTab('admin'); setIsMenuOpen(false); }} className="text-left text-lg font-bold text-emerald-600 border-b border-slate-50 pb-4">Panel Admin</button>
+            )}
+            {user ? (
+              <div className="flex flex-col gap-4">
+                <button onClick={() => { setView('dashboard'); setIsMenuOpen(false); }} className="text-left text-lg font-bold text-slate-800 border-b border-slate-50 pb-4">Tableau de bord</button>
+                <button onClick={() => { signOut(auth); setIsMenuOpen(false); }} className="text-left text-lg font-bold text-red-600">Déconnexion</button>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-4">
+                <button onClick={() => { handleLogin('candidate'); setIsMenuOpen(false); }} className="w-full py-4 text-center font-bold text-slate-700 bg-slate-100 rounded-xl">Je cherche un job</button>
+                <button onClick={() => { handleLogin('employer'); setIsMenuOpen(false); }} className="w-full py-4 text-center font-bold text-white bg-slate-900 rounded-xl">Je recrute</button>
+                <button onClick={() => { handleLogin('admin'); setIsMenuOpen(false); }} className="w-full py-3 text-center text-xs font-bold text-rose-500 bg-rose-50 border border-rose-100 rounded-xl">Accès Admin</button>
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Main Content */}
+      <main className="flex-1 overflow-hidden flex flex-col">
+        <AnimatePresence mode="wait">
+          {view === 'landing' && (
+            <LandingView 
+              onSearch={(category) => {
+                if (category) {
+                  setSelectedCategory(category);
+                } else {
+                  setSelectedCategory('');
+                }
+                setView('jobs');
+              }}
+              jobs={jobs}
+              onSelectJob={(job) => {
+                setSelectedJob(job);
+                setView('jobs');
+              }}
+              onViewAllJobs={() => {
+                setSelectedCategory('');
+                setView('jobs');
+              }}
+              onLogin={handleLogin}
+              user={user}
+              profile={profile}
+            />
+          )}
+          {view === 'jobs' && (
+            <div className="flex-1 flex overflow-hidden relative w-full">
+              <JobListView 
+                jobs={jobs} 
+                selectedCategory={selectedCategory} 
+                setSelectedCategory={setSelectedCategory}
+                selectedCity={selectedCity}
+                setSelectedCity={setSelectedCity}
+                onApply={handleApply}
+                canApply={profile?.role === 'candidate'}
+                onPostJob={() => setView('post-job')}
+                isEmployer={profile?.role === 'employer' || profile?.role === 'admin'}
+                onSeed={seedData}
+                onSelectJob={setSelectedJob}
+              />
+              
+              <AnimatePresence>
+                {selectedJob && (
+                  <JobDetailView 
+                    job={selectedJob} 
+                    onClose={() => setSelectedJob(null)} 
+                    onApply={() => {
+                      if (profile?.role === 'candidate' && user) {
+                        handleApply(selectedJob.id, selectedJob.employerId);
+                        setSelectedJob(null);
+                      } else {
+                        handleLogin('candidate');
+                      }
+                    }}
+                    canApply={profile?.role === 'candidate'}
+                  />
+                )}
+              </AnimatePresence>
+            </div>
+          )}
+          {view === 'post-job' && profile && <PostJobView onPosted={() => { setView('jobs'); fetchJobs(); }} profile={profile} />}
+          {view === 'dashboard' && user && (
+            <DashboardView 
+              profile={profile} 
+              user={user} 
+              activeTab={dashboardTab} 
+              setActiveTab={setDashboardTab} 
+              onProfileUpdate={(p) => setProfile(p)}
+              setView={setView}
+            />
+          )}
+        </AnimatePresence>
+      </main>
+
+      <AnimatePresence>
+        {applyingJob && (
+          <ApplicationFormModal 
+            job={applyingJob}
+            profile={profile}
+            onClose={() => setApplyingJob(null)}
+            onSubmit={submitApplication}
+          />
+        )}
+        
+        {showApplySuccess && (
+          <ApplicationSuccessView 
+            job={successJob} 
+            onClose={() => {
+              setShowApplySuccess(false);
+              setSuccessJob(null);
+            }} 
+            onGoToDashboard={() => {
+              setShowApplySuccess(false);
+              setSuccessJob(null);
+              setDashboardTab('applications');
+              setView('dashboard');
+            }}
+          />
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
