@@ -58,6 +58,7 @@ export default function App() {
   const [showApplySuccess, setShowApplySuccess] = useState(false);
   const [successJob, setSuccessJob] = useState<JobPost | null>(null);
   const [applyingJob, setApplyingJob] = useState<JobPost | null>(null);
+  const [authError, setAuthError] = useState<{ code: string; message: string } | null>(null);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -167,6 +168,10 @@ export default function App() {
         console.log("Connexion annulée par l'utilisateur.");
       } else {
         console.error("Erreur de connexion:", err);
+        setAuthError({
+          code: err.code || 'unknown',
+          message: err.message || JSON.stringify(err)
+        });
       }
     }
   };
@@ -462,6 +467,108 @@ export default function App() {
               setView('dashboard');
             }}
           />
+        )}
+
+        {authError && (
+          <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs z-[200] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl border border-slate-200 text-slate-800"
+            >
+              <div className="bg-rose-600 text-white p-6 relative">
+                <button 
+                  onClick={() => setAuthError(null)}
+                  className="absolute top-4 right-4 bg-white/15 hover:bg-white/25 rounded-full p-2.5 transition-colors cursor-pointer text-xs"
+                >
+                  ✕
+                </button>
+                <div className="flex items-center gap-3">
+                  <span className="text-3xl">⚠️</span>
+                  <div className="text-left">
+                    <h3 className="text-base font-black leading-tight">Problème d'authentification</h3>
+                    <p className="text-xs text-rose-100 mt-1 font-medium">Code d'erreur : {authError.code}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-6 md:p-8 space-y-6 text-left">
+                {authError.code === 'auth/unauthorized-domain' ? (
+                  <div className="space-y-4">
+                    <p className="text-xs text-slate-600 font-medium leading-relaxed">
+                      Cette erreur se produit lorsque l'adresse de votre site (le domaine Vercel ou l'URL de prévisualisation) n'est pas répertoriée comme autorisée dans la console d'administration de votre projet Firebase.
+                    </p>
+
+                    <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-2">
+                      <p className="text-[10px] font-bold text-amber-800 uppercase tracking-widest">Le domaine à ajouter à Firebase :</p>
+                      <div className="flex items-center justify-between bg-white border border-amber-100 rounded-xl p-3 font-mono text-xs text-slate-850">
+                        <span>{typeof window !== 'undefined' ? window.location.hostname : 'votre-domaine.vercel.app'}</span>
+                        <span className="text-[9px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100 uppercase">À copier</span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3 pt-2">
+                      <p className="text-xs font-black text-slate-900 uppercase tracking-wider">Comment corriger cela en 2 minutes :</p>
+                      
+                      <div className="space-y-2.5 text-xs text-slate-500 font-medium">
+                        <div className="flex gap-2.5">
+                          <span className="w-5 h-5 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold shrink-0 text-[10px]">1</span>
+                          <p>Allez sur votre <a href="https://console.firebase.google.com/" target="_blank" rel="noreferrer" className="text-emerald-600 font-bold underline">Console Firebase</a> et sélectionnez votre projet.</p>
+                        </div>
+                        <div className="flex gap-2.5">
+                          <span className="w-5 h-5 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold shrink-0 text-[10px]">2</span>
+                          <p>Dans la barre latérale gauche, cliquez sur <strong>Authentication</strong> (rubrique Build).</p>
+                        </div>
+                        <div className="flex gap-2.5">
+                          <span className="w-5 h-5 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold shrink-0 text-[10px]">3</span>
+                          <p>Cliquez sur l'onglet <strong>Settings</strong> (Paramètres) tout en haut.</p>
+                        </div>
+                        <div className="flex gap-2.5">
+                          <span className="w-5 h-5 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold shrink-0 text-[10px]">4</span>
+                          <p>Cliquez sur <strong>Authorized domains</strong> (Domaines autorisés) dans le mini-menu de gauche.</p>
+                        </div>
+                        <div className="flex gap-2.5">
+                          <span className="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold shrink-0 text-[10px]">5</span>
+                          <p>Cliquez sur <strong>Add domain</strong> (Ajouter un domaine), collez <strong className="text-slate-900 font-bold">{typeof window !== 'undefined' ? window.location.hostname : 'votre-domaine.vercel.app'}</strong> et enregistrez !</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <p className="text-xs text-slate-600 font-bold">Détails techniques de l'erreur brute :</p>
+                    <pre className="bg-slate-50 border border-slate-100 text-[10px] p-3.5 rounded-xl overflow-x-auto font-mono text-slate-700 whitespace-pre-wrap max-h-32">
+                      {authError.message}
+                    </pre>
+                    <p className="text-xs text-slate-500 leading-relaxed font-semibold">
+                      <strong>Recommandation :</strong> Assurez-vous d'avoir bien activé la connexion avec Google comme fournisseur dans l'onglet "Sign-in method" de votre console d'authentification Firebase.
+                    </p>
+                  </div>
+                )}
+
+                <div className="pt-4 border-t border-slate-100 flex gap-3">
+                  <button
+                    onClick={() => {
+                      if (typeof window !== 'undefined') {
+                        navigator.clipboard.writeText(window.location.hostname);
+                        alert("Le nom de domaine '" + window.location.hostname + "' a été copié dans votre presse-papier !");
+                      }
+                    }}
+                    className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold uppercase tracking-wider rounded-xl transition-colors cursor-pointer"
+                  >
+                    📋 Copier le domaine
+                  </button>
+                  <button
+                    onClick={() => setAuthError(null)}
+                    className="flex-1 py-3 bg-slate-900 hover:bg-black text-white text-xs font-extrabold uppercase tracking-wider rounded-xl transition-colors cursor-pointer"
+                  >
+                    Fermer
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>
