@@ -38,6 +38,7 @@ service cloud.firestore {
         // and allow changing role for the prototype feature
         !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isVerified', 'uid'])
       ) || isAdmin();
+      allow delete: if isAdmin();
     }
 
     match /jobs/{jobId} {
@@ -51,6 +52,7 @@ service cloud.firestore {
       allow read: if isSignedIn() && (isOwner(resource.data.candidateId) || isOwner(resource.data.employerId) || isAdmin());
       allow create: if isSignedIn() && hasRole('candidate') && request.resource.data.candidateId == request.auth.uid;
       allow update: if isSignedIn() && (isOwner(resource.data.candidateId) || isOwner(resource.data.employerId) || isAdmin());
+      allow delete: if isSignedIn() && (isOwner(resource.data.candidateId) || isOwner(resource.data.employerId) || isAdmin());
     }
 
     match /reviews/{reviewId} {

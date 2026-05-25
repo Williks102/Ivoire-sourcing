@@ -54,6 +54,98 @@ export default function App() {
   const [selectedJob, setSelectedJob] = useState<JobPost | null>(null);
   const [dashboardTab, setDashboardTab] = useState<'overview' | 'verification' | 'my-jobs' | 'applications' | 'admin' | 'browse-candidates'>('overview');
   
+  // Real-time toast notifications state
+  const [toasts, setToasts] = useState<{ id: string; message: string; type: 'success' | 'info' | 'error' }[]>([]);
+
+  // Toast creation helper
+  const addToast = (message: string, type: 'success' | 'info' | 'error' = 'info') => {
+    const id = Math.random().toString(36).substring(7);
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 6000);
+  };
+
+  // Register Toast trigger Globally
+  useEffect(() => {
+    (window as any).addToast = addToast;
+  }, []);
+
+  // Sockets Listener Setup
+  useEffect(() => {
+    let ws: WebSocket;
+    let reconnectTimer: any;
+
+    function connect() {
+      try {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}`;
+        ws = new WebSocket(wsUrl);
+
+        ws.onopen = () => {
+          console.log('[WS CLIENT] WebSocket connection successfully authorized.');
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.type === 'action_validated') {
+              if (data.action === 'job_moderation_approved') {
+                addToast(`⚡ Annonce validée : "${data.payload.title}" est maintenant en ligne !`, 'success');
+                fetchJobs();
+              } else if (data.action === 'job_moderation_rejected') {
+                addToast(`⚠️ Annonce refusée par l'administrateur : ${data.payload.reason}`, 'error');
+              } else if (data.action === 'premium_payment_success') {
+                addToast(`💳 Boost Premium activé pour le recruteur !`, 'success');
+              } else if (data.action === 'certificate_approved') {
+                addToast(`🏆 Nouveau document de certification validé par l'admin !`, 'success');
+              } else if (data.action === 'candidate_certified') {
+                addToast(`🌟 Le profil candidat est maintenant certifié !`, 'success');
+              } else if (data.action === 'dashboard_action') {
+                addToast(`⚡ Action approuvée : ${data.payload.name}`, 'success');
+                fetchJobs();
+              }
+              
+              // Trigger a global custom event to allow nested views to react or sync lists
+              window.dispatchEvent(new CustomEvent('ws-action-validated', { detail: data }));
+            }
+          } catch (err) {
+            console.error('[WS CLIENT] Parse Error:', err);
+          }
+        };
+
+        ws.onclose = () => {
+          console.log('[WS CLIENT] Disconnected, reconnecting in 5s...');
+          reconnectTimer = setTimeout(connect, 5000);
+        };
+
+        ws.onerror = () => {
+          ws.close();
+        };
+      } catch (err) {
+        console.error('[WS CLIENT] Connection failed:', err);
+      }
+    }
+
+    connect();
+
+    // Attach static trigger for anywhere in the application
+    (window as any).triggerSocketAction = (action: string, payload: any) => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'action_validated',
+          action,
+          payload
+        }));
+      }
+    };
+
+    return () => {
+      if (ws) ws.close();
+      clearTimeout(reconnectTimer);
+    };
+  }, []);
+
   // States for application confirmation
   const [showApplySuccess, setShowApplySuccess] = useState(false);
   const [successJob, setSuccessJob] = useState<JobPost | null>(null);
@@ -571,6 +663,40 @@ export default function App() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* Floating Real-time Sockets Toast Notification Panel */}
+      <div className="fixed bottom-6 right-6 z-[250] flex flex-col gap-3 max-w-sm w-full pointer-events-none font-sans">
+        <AnimatePresence>
+          {toasts.map(toast => (
+            <motion.div
+              key={toast.id}
+              initial={{ opacity: 0, y: 30, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -25, scale: 0.9, transition: { duration: 0.2 } }}
+              className={`p-4 rounded-2xl shadow-xl flex items-center gap-3 text-white border select-none pointer-events-auto ${
+                toast.type === 'success' 
+                  ? 'bg-emerald-600 border-emerald-500' 
+                  : toast.type === 'error' 
+                    ? 'bg-rose-600 border-rose-500' 
+                    : 'bg-slate-900 border-slate-800'
+              }`}
+            >
+              <div className="text-xl shrink-0">
+                {toast.type === 'success' ? '⚡' : toast.type === 'error' ? '⚠️' : '🔔'}
+              </div>
+              <div className="text-xs font-black tracking-tight flex-1">
+                {toast.message}
+              </div>
+              <button 
+                onClick={() => setToasts(prev => prev.filter(t => t.id !== toast.id))}
+                className="text-white/60 hover:text-white bg-white/10 hover:bg-white/20 p-1 rounded-lg text-[10px] w-5 h-5 flex items-center justify-center font-bold shrink-0 cursor-pointer"
+              >
+                ✕
+              </button>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
     </div>
   );
 }

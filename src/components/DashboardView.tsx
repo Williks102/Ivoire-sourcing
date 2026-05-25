@@ -218,6 +218,9 @@ export function DashboardView({
       const path = `applications/${appId}`;
       await setDoc(doc(db, 'applications', appId), { status: newStatus }, { merge: true });
       setApps(prev => prev.map(a => a.id === appId ? { ...a, status: newStatus as any } : a));
+      if (typeof (window as any).triggerSocketAction === 'function') {
+        (window as any).triggerSocketAction('dashboard_action', { name: `Candidature mise à jour vers : ${newStatus}` });
+      }
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, `applications/${appId}`);
     }
@@ -393,6 +396,9 @@ export function DashboardView({
       setViewingDocsUser(updatedUser);
       await setDoc(doc(db, 'users', viewingDocsUser.uid), { verificationDocs: updatedDocs }, { merge: true });
       setAllUsers(prev => prev.map(u => u.uid === viewingDocsUser.uid ? { ...u, verificationDocs: updatedDocs } : u));
+      if (typeof (window as any).triggerSocketAction === 'function') {
+        (window as any).triggerSocketAction('certificate_approved', { userId: viewingDocsUser.uid });
+      }
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, `users/${viewingDocsUser.uid}`);
     }
@@ -433,6 +439,9 @@ export function DashboardView({
       const nextStatus = !targetUser.isVerified;
       await setDoc(doc(db, 'users', targetUser.uid), { isVerified: nextStatus }, { merge: true });
       setAllUsers(prev => prev.map(u => u.uid === targetUser.uid ? { ...u, isVerified: nextStatus } : u));
+      if (nextStatus && typeof (window as any).triggerSocketAction === 'function') {
+        (window as any).triggerSocketAction('candidate_certified', { userId: targetUser.uid });
+      }
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, `users/${targetUser.uid}`);
     }
@@ -444,6 +453,9 @@ export function DashboardView({
       const nextPremium = !targetUser.isPremium;
       await setDoc(doc(db, 'users', targetUser.uid), { isPremium: nextPremium }, { merge: true });
       setAllUsers(prev => prev.map(u => u.uid === targetUser.uid ? { ...u, isPremium: nextPremium } : u));
+      if (nextPremium && typeof (window as any).triggerSocketAction === 'function') {
+        (window as any).triggerSocketAction('premium_payment_success', { userId: targetUser.uid });
+      }
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, `users/${targetUser.uid}`);
     }
@@ -454,8 +466,22 @@ export function DashboardView({
     try {
       await setDoc(doc(db, 'jobs', jobId), { status: newStatus }, { merge: true });
       setMyJobs(prev => prev.map(j => j.id === jobId ? { ...j, status: newStatus } : j));
+      if (newStatus === 'approved' && typeof (window as any).triggerSocketAction === 'function') {
+        (window as any).triggerSocketAction('job_moderation_approved', { title: 'Annonce Modérée' });
+      } else if (newStatus === 'rejected' && typeof (window as any).triggerSocketAction === 'function') {
+        (window as any).triggerSocketAction('job_moderation_rejected', { title: 'Annonce Modérée', reason: 'Non conforme' });
+      }
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, `jobs/${jobId}`);
+    }
+  };
+
+  // Helper to trigger toast alerts
+  const showNotification = (message: string, type: 'success' | 'info' | 'error' = 'info') => {
+    if (typeof (window as any).addToast === 'function') {
+      (window as any).addToast(message, type);
+    } else {
+      console.log(`[Notification] ${type.toUpperCase()}: ${message}`);
     }
   };
 
@@ -468,7 +494,9 @@ export function DashboardView({
         try {
           await deleteDoc(doc(db, 'jobs', jobId));
           setMyJobs(prev => prev.filter(j => j.id !== jobId));
+          showNotification("L'offre d'emploi a été supprimée avec succès.", "success");
         } catch (err) {
+          showNotification("Attribution insuffisante ou erreur lors de la suppression de l'offre.", "error");
           handleFirestoreError(err, OperationType.DELETE, `jobs/${jobId}`);
         }
       }
@@ -484,7 +512,9 @@ export function DashboardView({
         try {
           await deleteDoc(doc(db, 'applications', appId));
           setApps(prev => prev.filter(a => a.id !== appId));
+          showNotification("La candidature a été supprimée avec succès.", "success");
         } catch (err) {
+          showNotification("Attribution insuffisante ou erreur lors de la suppression de la candidature.", "error");
           handleFirestoreError(err, OperationType.DELETE, `applications/${appId}`);
         }
       }
@@ -500,7 +530,9 @@ export function DashboardView({
         try {
           await deleteDoc(doc(db, 'users', targetUid));
           setAllUsers(prev => prev.filter(u => u.uid !== targetUid));
+          showNotification("Le compte utilisateur a été supprimé avec succès.", "success");
         } catch (err) {
+          showNotification("Attribution insuffisante ou erreur lors de la suppression de l'utilisateur.", "error");
           handleFirestoreError(err, OperationType.DELETE, `users/${targetUid}`);
         }
       }
@@ -2713,7 +2745,7 @@ export function DashboardView({
                         confirmation.onConfirm();
                         setConfirmation(null);
                       }}
-                      className="flex-1 bg-red-650 hover:bg-red-700 hover:scale-[1.02] active:scale-[0.98] text-white py-3 rounded-xl text-xs font-bold uppercase tracking-wider transition-all"
+                      className="flex-1 bg-red-600 hover:bg-red-700 hover:scale-[1.02] active:scale-[0.98] text-white py-3 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer"
                     >
                        Confirmer
                     </button>
