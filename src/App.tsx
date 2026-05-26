@@ -32,7 +32,7 @@ import {
   Briefcase,
   FileCheck
 } from 'lucide-react';
-import { auth, db, googleProvider, rawConfig } from './lib/firebase';
+import { auth, db, googleProvider, rawConfig, isFirebaseAvailableByConfig } from './lib/firebase';
 import { UserProfile, JobPost, UserRole } from './types';
 import { LandingView } from './components/LandingView';
 import { JobListView, JobDetailView } from './components/JobListView';
@@ -157,13 +157,24 @@ export default function App() {
       setLoading(false);
     }, 8000);
 
-    // Proactive check: if Firebase config is blank/missing (as on Vercel before env setup), show helpful instructions immediately
-    if (!rawConfig || !rawConfig.apiKey || rawConfig.apiKey === '') {
-      setAuthError({
-        code: 'auth/api-key-not-valid',
-        message: "Firebase API Key is missing or invalid. Please configure your Vercel Environment Variables."
-      });
+    // Auto-login of saved demo/bypass connections for smooth offline testing
+    const savedDemoUser = localStorage.getItem('demo_user');
+    const savedDemoProfile = localStorage.getItem('demo_profile');
+    if (savedDemoUser && savedDemoProfile) {
+      setUser(JSON.parse(savedDemoUser));
+      setProfile(JSON.parse(savedDemoProfile));
       setLoading(false);
+      clearTimeout(timer);
+      fetchJobs().catch(() => {});
+      return;
+    }
+
+    // Proactive check: if Firebase config is blank/missing (as on Vercel before env setup), we run in quiet offline demo mode rather than crashing
+    if (!isFirebaseAvailableByConfig || !rawConfig || !rawConfig.apiKey || rawConfig.apiKey === '') {
+      console.warn("[FIREBASE] Unconfigured or missing keys. Running in local simulation mode.");
+      setLoading(false);
+      clearTimeout(timer);
+      fetchJobs().catch(() => {});
       return;
     }
 
@@ -188,7 +199,7 @@ export default function App() {
       }
     });
     return () => {
-      unsubscribe();
+      if (unsubscribe) unsubscribe();
       clearTimeout(timer);
     };
   }, []);
@@ -205,6 +216,9 @@ export default function App() {
 
   const fetchJobs = async () => {
     try {
+      if (!isFirebaseAvailableByConfig) {
+        throw new Error("Local Demo Mode Active");
+      }
       let q = query(collection(db, 'jobs'), where('status', '==', 'approved'));
       
       if (selectedCategory) {
@@ -223,14 +237,101 @@ export default function App() {
       }
       setIsOffline(false);
     } catch (err: any) {
-      console.error("Error fetching jobs:", err);
-      if (err.message?.includes('offline') || err.code === 'unavailable') {
-        setIsOffline(true);
+      console.warn("Running in local simulation mode for jobs list:", err);
+      const localJobs = localStorage.getItem('offline_jobs');
+      if (localJobs) {
+        setJobs(JSON.parse(localJobs));
+      } else {
+        const demoJobs: JobPost[] = [
+          {
+            id: 'demo-0',
+            employerId: 'system',
+            title: 'Nounou Plein Temps (Cocody)',
+            description: 'Recherche nounou expérimentée pour garde de deux jumeaux de 2 ans. Logée ou non-logée. Références exigées.',
+            category: 'nounou',
+            location: 'Abidjan',
+            salaryRange: '120 000 FCFA',
+            status: 'approved',
+            isPremium: true,
+            createdAt: new Date().toISOString()
+          },
+          {
+             id: 'demo-1',
+             employerId: 'system',
+             title: 'Chauffeur Professionnel VTC',
+             description: 'Besoin d un chauffeur maitrisant la zone de Marcory et Plateau. Conduite défensive exigée.',
+             category: 'chauffeur',
+             location: 'Abidjan',
+             salaryRange: '150 000 FCFA',
+             status: 'approved',
+             isPremium: false,
+             createdAt: new Date().toISOString()
+          }
+        ];
+        setJobs(demoJobs);
       }
+      setIsOffline(true);
     }
   };
 
+  const handleDemoLogin = (role: UserRole) => {
+    const mockUid = 'demo-' + role + '-uid-' + Math.random().toString(36).substring(7);
+    const mockUser = {
+      uid: mockUid,
+      displayName: role === 'candidate' ? 'Marie Kouassi' : role === 'employer' ? 'Société Sourcing CI' : 'Administrateur Sourcing',
+      email: `${role}@ivoiresource.ci`,
+      photoURL: role === 'candidate' 
+        ? 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=200&auto=format&fit=crop'
+        : 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?q=80&w=200&auto=format&fit=crop'
+    };
+
+    const mockProfile: UserProfile = {
+      uid: mockUid,
+      role,
+      displayName: mockUser.displayName,
+      email: mockUser.email,
+      photoURL: mockUser.photoURL,
+      skills: role === 'candidate' ? ["Garde d'enfants", "Ménage", "Cuisine africaine"] : [],
+      isVerified: role === 'candidate', // candidate pre-certified for easy simulator use
+      isPremium: role === 'employer',
+      averageRating: role === 'candidate' ? 4.9 : 0,
+      reviewCount: role === 'candidate' ? 3 : 0,
+      createdAt: new Date().toISOString()
+    };
+
+    localStorage.setItem('demo_user', JSON.stringify(mockUser));
+    localStorage.setItem('demo_profile', JSON.stringify(mockProfile));
+
+    setUser(mockUser as any);
+    setProfile(mockProfile);
+    setAuthError(null);
+    setView('dashboard');
+    addToast(`🚀 Connexion de simulation réussie en tant que ${role === 'employer' ? 'Recruteur' : role === 'admin' ? 'Administrateur' : 'Candidat'} !`, 'success');
+  };
+
+  const handleLogout = async () => {
+    try {
+      localStorage.removeItem('demo_user');
+      localStorage.removeItem('demo_profile');
+      if (isFirebaseAvailableByConfig) {
+        await signOut(auth);
+      }
+    } catch (err) {
+      console.error("Logout error:", err);
+    }
+    setUser(null);
+    setProfile(null);
+    setView('landing');
+    addToast('🚪 Vous avez été déconnecté.', 'info');
+  };
+
   const handleLogin = async (role: UserRole) => {
+    if (!isFirebaseAvailableByConfig || !rawConfig || !rawConfig.apiKey || rawConfig.apiKey === '') {
+      // Automatic safety redirect to Demo Login if Firebase is empty/fails
+      handleDemoLogin(role);
+      return;
+    }
+
     try {
       const result = await signInWithPopup(auth, googleProvider);
       const u = result.user;
@@ -266,8 +367,12 @@ export default function App() {
       }
       setView('dashboard');
     } catch (err: any) {
-      if (err.code === 'auth/popup-closed-by-user') {
-        console.log("Connexion annulée par l'utilisateur.");
+      if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
+        console.log("Connexion annulée ou demande popup de connexion interrompue :", err);
+        addToast("Connexion annulée ou fermée par l'utilisateur.", 'info');
+      } else if (err.code === 'auth/popup-blocked') {
+        console.warn("Le popup de connexion a été bloqué par le navigateur :", err);
+        addToast("Le popup de connexion a été bloqué par votre navigateur. Veuillez autoriser les fenêtres contextuelles ou utiliser les accès rapides de test.", 'error');
       } else {
         console.error("Erreur de connexion:", err);
         setAuthError({
@@ -434,7 +539,7 @@ export default function App() {
                 <button onClick={() => setView('dashboard')} className="w-10 h-10 bg-slate-200 rounded-full border-2 border-white shadow-sm overflow-hidden">
                   <img src={profile?.photoURL || 'https://via.placeholder.com/40'} alt="Profile" className="w-full h-full object-cover" />
                 </button>
-                <button onClick={() => signOut(auth)} className="text-slate-400 hover:text-red-600 transition-colors">
+                <button onClick={handleLogout} className="text-slate-400 hover:text-red-600 transition-colors">
                   <LogOut className="h-4 w-4" />
                 </button>
               </div>
@@ -473,7 +578,7 @@ export default function App() {
             {user ? (
               <div className="flex flex-col gap-4">
                 <button onClick={() => { setView('dashboard'); setIsMenuOpen(false); }} className="text-left text-lg font-bold text-slate-800 border-b border-slate-50 pb-4">Tableau de bord</button>
-                <button onClick={() => { signOut(auth); setIsMenuOpen(false); }} className="text-left text-lg font-bold text-red-600">Déconnexion</button>
+                <button onClick={() => { handleLogout(); setIsMenuOpen(false); }} className="text-left text-lg font-bold text-red-600">Déconnexion</button>
               </div>
             ) : (
               <div className="flex flex-col gap-4">
@@ -509,6 +614,7 @@ export default function App() {
                 setView('jobs');
               }}
               onLogin={handleLogin}
+              onDemoLogin={handleDemoLogin}
               user={user}
               profile={profile}
             />

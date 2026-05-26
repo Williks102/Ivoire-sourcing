@@ -28,7 +28,7 @@ import {
 } from 'lucide-react';
 import { User, signOut } from 'firebase/auth';
 import { collection, query, limit, getDocs, where, doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
-import { db, auth } from '../lib/firebase';
+import { db, auth, isFirebaseAvailableByConfig } from '../lib/firebase';
 import { UserProfile, JobPost, Application, UserRole } from '../types';
 import { CITIES, CATEGORIES } from '../constants';
 
@@ -225,6 +225,21 @@ export function DashboardView({
 
   const updateAppStatus = async (appId: string, newStatus: string) => {
     try {
+      const isDemoMode = !isFirebaseAvailableByConfig || (user?.uid?.startsWith('demo-') ?? true);
+      if (isDemoMode) {
+        const localApps = JSON.parse(localStorage.getItem('offline_applications') || '[]');
+        const idx = localApps.findIndex((a: any) => a.id === appId);
+        if (idx !== -1) {
+          localApps[idx].status = newStatus;
+          localStorage.setItem('offline_applications', JSON.stringify(localApps));
+        }
+        setApps(prev => prev.map(a => a.id === appId ? { ...a, status: newStatus as any } : a));
+        if (typeof (window as any).triggerSocketAction === 'function') {
+          (window as any).triggerSocketAction('dashboard_action', { name: `Candidature (Démo) mise à jour vers : ${newStatus}` });
+        }
+        return;
+      }
+
       const path = `applications/${appId}`;
       await setDoc(doc(db, 'applications', appId), { status: newStatus }, { merge: true });
       setApps(prev => prev.map(a => a.id === appId ? { ...a, status: newStatus as any } : a));
@@ -286,6 +301,14 @@ export function DashboardView({
         cvName: profileCvFile ? profileCvFile.name : '',
         cvUrl: profileCvFile ? profileCvFile.content : '',
       };
+      const isDemoMode = !isFirebaseAvailableByConfig || (user?.uid?.startsWith('demo-') ?? true);
+      if (isDemoMode) {
+        localStorage.setItem('demo_profile', JSON.stringify(updated));
+        onProfileUpdate(updated);
+        setSuccessMsg('Votre profil (Démo) a été mis à jour de manière sécurisée !');
+        setTimeout(() => setSuccessMsg(''), 4000);
+        return;
+      }
       await setDoc(doc(db, 'users', user.uid), updated);
       onProfileUpdate(updated);
       setSuccessMsg('Votre profil a été mis à jour de manière sécurisée !');
@@ -309,6 +332,14 @@ export function DashboardView({
         isVerified: false, // will require admin verification
         bio: (profile.bio || '') + `\n[ID Soumise pour CNI/Passeport: N° ${idNumber}]`
       };
+      const isDemoMode = !isFirebaseAvailableByConfig || (user?.uid?.startsWith('demo-') ?? true);
+      if (isDemoMode) {
+        localStorage.setItem('demo_profile', JSON.stringify(updated));
+        onProfileUpdate(updated);
+        setVerificationFeedback('Votre demande de certification (Démo) a été transmise aux administrateurs !');
+        setIdNumber('');
+        return;
+      }
       await setDoc(doc(db, 'users', user.uid), updated);
       onProfileUpdate(updated);
       setVerificationFeedback('Votre demande de certification a été transmise aux administrateurs avec succès !');
@@ -686,7 +717,12 @@ export function DashboardView({
     
     const fetchData = async () => {
       setLoadingData(true);
+      const isDemoMode = !isFirebaseAvailableByConfig || (user?.uid?.startsWith('demo-') ?? true);
       try {
+        if (isDemoMode) {
+          throw new Error("Local Demo Mode Active");
+        }
+
         if (profile.role === 'admin') {
           const qUsers = query(collection(db, 'users'), limit(100));
           const snapUsers = await getDocs(qUsers);
@@ -727,7 +763,107 @@ export function DashboardView({
           setApps(snapApps.docs.map(d => ({ id: d.id, ...d.data() } as Application)));
         }
       } catch (err) {
-        console.error("Error fetching dashboard data:", err);
+        console.log("[DASHBOARD] Fetching offline/simulated simulation data", err);
+        // Populating offline/simulated local data based on role
+        if (profile.role === 'admin') {
+          setAllUsers([
+            {
+              uid: 'demo-candidate-uid-123',
+              role: 'candidate',
+              displayName: 'Marie Kouassi',
+              email: 'marie.k@gmail.com',
+              photoURL: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=200&auto=format&fit=crop',
+              skills: ["Garde d'enfants", "Cuisine africaine", "Ménage"],
+              isVerified: true,
+              isPremium: false,
+              averageRating: 4.8,
+              reviewCount: 3,
+              createdAt: new Date().toISOString()
+            },
+            {
+              uid: 'demo-employer-uid-456',
+              role: 'employer',
+              displayName: 'Société Ivoire Prestige',
+              email: 'employer@ivoiresource.ci',
+              photoURL: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?q=80&w=200&auto=format&fit=crop',
+              skills: [],
+              isVerified: true,
+              isPremium: true,
+              averageRating: 0,
+              reviewCount: 0,
+              createdAt: new Date().toISOString()
+            }
+          ]);
+          
+          const localJobs = JSON.parse(localStorage.getItem('offline_jobs') || '[]');
+          const defaultDemoJobs = [
+            {
+              id: 'demo-0',
+              employerId: 'system',
+              title: 'Nounou Plein Temps (Cocody)',
+              description: 'Recherche nounou expérimentée pour garde de deux jumeaux de 2 ans. Références exigées.',
+              category: 'nounou',
+              location: 'Abidjan',
+              salaryRange: '120 000 FCFA',
+              status: 'approved',
+              isPremium: true,
+              createdAt: new Date().toISOString()
+            }
+          ];
+          setMyJobs(localJobs.length > 0 ? localJobs : defaultDemoJobs);
+
+          const localApps = JSON.parse(localStorage.getItem('offline_applications') || '[]');
+          const defaultDemoApps = [
+            {
+              id: 'local-app-1',
+              jobId: 'demo-0',
+              employerId: 'system',
+              candidateId: 'demo-candidate-uid-123',
+              status: 'pending',
+              message: "Bonjour, j'ai 3 ans d'expérience dans la garde de très jeunes enfants et d'entretien de maison.",
+              candidateName: 'Marie Kouassi',
+              photoURL: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=200&auto=format&fit=crop',
+              experienceYears: 3,
+              cvName: 'Mon_CV.pdf',
+              cvUrl: '#',
+              createdAt: new Date().toISOString()
+            }
+          ];
+          setApps(localApps.length > 0 ? localApps : defaultDemoApps);
+        }
+
+        if (profile.role === 'employer') {
+          setCandidates([
+            {
+              uid: 'demo-candidate-uid-123',
+              role: 'candidate',
+              displayName: 'Marie Kouassi',
+              email: 'marie.k@gmail.com',
+              photoURL: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=200&auto=format&fit=crop',
+              skills: ["Garde d'enfants", "Cuisine africaine", "Ménage familial"],
+              isVerified: true,
+              isPremium: false,
+              averageRating: 4.8,
+              reviewCount: 3,
+              createdAt: new Date().toISOString(),
+              verificationDocs: [
+                { id: 'doc1', name: 'CNI_Marie_Kouassi.pdf', type: 'id_card', status: 'approved', comment: 'Validé avec succès par l\'admin' }
+              ]
+            }
+          ]);
+
+          const localJobs = JSON.parse(localStorage.getItem('offline_jobs') || '[]');
+          setMyJobs(localJobs.filter((j: any) => j.employerId === user.uid));
+
+          const localApps = JSON.parse(localStorage.getItem('offline_applications') || '[]');
+          setApps(localApps.filter((a: any) => a.employerId === user.uid));
+          setUnlockedCandidateIds(['demo-candidate-uid-123']);
+        }
+
+        if (profile.role === 'candidate') {
+          const localApps = JSON.parse(localStorage.getItem('offline_applications') || '[]');
+          setApps(localApps.filter((a: any) => a.candidateId === user.uid));
+        }
       } finally {
         setLoadingData(false);
       }

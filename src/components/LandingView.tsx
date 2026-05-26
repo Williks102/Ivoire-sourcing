@@ -35,6 +35,7 @@ interface LandingViewProps {
   onSelectJob: (job: JobPost) => void;
   onViewAllJobs: () => void;
   onLogin: (role: UserRole) => Promise<void>;
+  onDemoLogin?: (role: UserRole) => void;
   user: any;
   profile: any;
 }
@@ -154,6 +155,7 @@ export function LandingView({
   onSelectJob, 
   onViewAllJobs, 
   onLogin, 
+  onDemoLogin,
   user, 
   profile 
 }: LandingViewProps) {
@@ -352,6 +354,31 @@ export function LandingView({
               >
                 👶 Devenir Candidat (S'inscrire)
               </button>
+            </div>
+
+            {/* Optional AI Studio Sandbox Testing Prompt */}
+            <div className="text-center lg:text-left pt-3">
+              <span className="text-slate-500 text-[10px] font-black uppercase tracking-widest block">Accès rapide Sandbox (Bypass Google)</span>
+              <div className="flex flex-wrap gap-2 justify-center lg:justify-start mt-2">
+                <button 
+                  onClick={() => onDemoLogin?.('candidate')} 
+                  className="text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer"
+                >
+                  ⚡ Candidat de Test
+                </button>
+                <button 
+                  onClick={() => onDemoLogin?.('employer')} 
+                  className="text-cyan-400 hover:text-cyan-300 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer"
+                >
+                  ⚡ Recruteur de Test
+                </button>
+                <button 
+                  onClick={() => onDemoLogin?.('admin')} 
+                  className="text-rose-400 hover:text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer"
+                >
+                  ⚡ Admin de Test
+                </button>
+              </div>
             </div>
 
             {/* Microstats banner */}
