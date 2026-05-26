@@ -32,7 +32,7 @@ import {
   Briefcase,
   FileCheck
 } from 'lucide-react';
-import { auth, db, googleProvider } from './lib/firebase';
+import { auth, db, googleProvider, rawConfig } from './lib/firebase';
 import { UserProfile, JobPost, UserRole } from './types';
 import { LandingView } from './components/LandingView';
 import { JobListView, JobDetailView } from './components/JobListView';
@@ -52,7 +52,7 @@ export default function App() {
   const [selectedCity, setSelectedCity] = useState<string>('');
   const [jobs, setJobs] = useState<JobPost[]>([]);
   const [selectedJob, setSelectedJob] = useState<JobPost | null>(null);
-  const [dashboardTab, setDashboardTab] = useState<'overview' | 'verification' | 'my-jobs' | 'applications' | 'admin' | 'browse-candidates'>('overview');
+  const [dashboardTab, setDashboardTab] = useState<'overview' | 'verification' | 'my-jobs' | 'applications' | 'admin' | 'browse-candidates' | 'profile'>('overview');
   
   // Real-time toast notifications state
   const [toasts, setToasts] = useState<{ id: string; message: string; type: 'success' | 'info' | 'error' }[]>([]);
@@ -156,6 +156,16 @@ export default function App() {
     const timer = setTimeout(() => {
       setLoading(false);
     }, 8000);
+
+    // Proactive check: if Firebase config is blank/missing (as on Vercel before env setup), show helpful instructions immediately
+    if (!rawConfig || !rawConfig.apiKey || rawConfig.apiKey === '') {
+      setAuthError({
+        code: 'auth/api-key-not-valid',
+        message: "Firebase API Key is missing or invalid. Please configure your Vercel Environment Variables."
+      });
+      setLoading(false);
+      return;
+    }
 
     const unsubscribe = onAuthStateChanged(auth, async (u) => {
       setUser(u);
@@ -330,7 +340,9 @@ export default function App() {
     candidateName: string;
     photoURL: string;
     experienceYears: number;
+    phone: string;
     cvName?: string;
+    cvUrl?: string;
     message: string;
   }) => {
     if (!user || !applyingJob) return;
@@ -345,8 +357,23 @@ export default function App() {
         photoURL: data.photoURL,
         experienceYears: Number(data.experienceYears),
         cvName: data.cvName || '',
+        cvUrl: data.cvUrl || '',
         createdAt: new Date().toISOString()
       });
+
+      // Sync user profile in real-time
+      if (profile) {
+        const updatedProfile = {
+          ...profile,
+          displayName: data.candidateName,
+          photoURL: data.photoURL,
+          phone: data.phone,
+          ...(data.cvName ? { cvName: data.cvName, cvUrl: data.cvUrl } : {})
+        };
+        await setDoc(doc(db, 'users', user.uid), updatedProfile);
+        setProfile(updatedProfile);
+      }
+
       setSuccessJob(applyingJob);
       setApplyingJob(null);
       setShowApplySuccess(true);
@@ -586,58 +613,109 @@ export default function App() {
               </div>
 
               <div className="p-6 md:p-8 space-y-6 text-left">
-                {authError.code === 'auth/unauthorized-domain' ? (
-                  <div className="space-y-4">
-                    <p className="text-xs text-slate-600 font-medium leading-relaxed">
-                      Cette erreur se produit lorsque l'adresse de votre site (le domaine Vercel ou l'URL de prévisualisation) n'est pas répertoriée comme autorisée dans la console d'administration de votre projet Firebase.
-                    </p>
+                {(() => {
+                  const isApiKeyError = authError.code === 'auth/api-key-not-valid' || 
+                                        authError.code === 'auth/invalid-api-key' ||
+                                        (authError.message && (
+                                          authError.message.includes('api-key-not-valid') || 
+                                          authError.message.includes('invalid-api-key') || 
+                                          authError.message.includes('API key')
+                                        ));
+                  
+                  if (authError.code === 'auth/unauthorized-domain') {
+                    return (
+                      <div className="space-y-4">
+                        <p className="text-xs text-slate-600 font-medium leading-relaxed">
+                          Cette erreur se produit lorsque l'adresse de votre site (le domaine Vercel ou l'URL de prévisualisation) n'est pas répertoriée comme autorisée dans la console d'administration de votre projet Firebase.
+                        </p>
 
-                    <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-2">
-                      <p className="text-[10px] font-bold text-amber-800 uppercase tracking-widest">Le domaine à ajouter à Firebase :</p>
-                      <div className="flex items-center justify-between bg-white border border-amber-100 rounded-xl p-3 font-mono text-xs text-slate-850">
-                        <span>{typeof window !== 'undefined' ? window.location.hostname : 'votre-domaine.vercel.app'}</span>
-                        <span className="text-[9px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100 uppercase">À copier</span>
-                      </div>
-                    </div>
+                        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-2">
+                          <p className="text-[10px] font-bold text-amber-800 uppercase tracking-widest">Le domaine à ajouter à Firebase :</p>
+                          <div className="flex items-center justify-between bg-white border border-amber-100 rounded-xl p-3 font-mono text-xs text-slate-850">
+                            <span>{typeof window !== 'undefined' ? window.location.hostname : 'votre-domaine.vercel.app'}</span>
+                            <span className="text-[9px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100 uppercase">À copier</span>
+                          </div>
+                        </div>
 
-                    <div className="space-y-3 pt-2">
-                      <p className="text-xs font-black text-slate-900 uppercase tracking-wider">Comment corriger cela en 2 minutes :</p>
-                      
-                      <div className="space-y-2.5 text-xs text-slate-500 font-medium">
-                        <div className="flex gap-2.5">
-                          <span className="w-5 h-5 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold shrink-0 text-[10px]">1</span>
-                          <p>Allez sur votre <a href="https://console.firebase.google.com/" target="_blank" rel="noreferrer" className="text-emerald-600 font-bold underline">Console Firebase</a> et sélectionnez votre projet.</p>
-                        </div>
-                        <div className="flex gap-2.5">
-                          <span className="w-5 h-5 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold shrink-0 text-[10px]">2</span>
-                          <p>Dans la barre latérale gauche, cliquez sur <strong>Authentication</strong> (rubrique Build).</p>
-                        </div>
-                        <div className="flex gap-2.5">
-                          <span className="w-5 h-5 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold shrink-0 text-[10px]">3</span>
-                          <p>Cliquez sur l'onglet <strong>Settings</strong> (Paramètres) tout en haut.</p>
-                        </div>
-                        <div className="flex gap-2.5">
-                          <span className="w-5 h-5 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold shrink-0 text-[10px]">4</span>
-                          <p>Cliquez sur <strong>Authorized domains</strong> (Domaines autorisés) dans le mini-menu de gauche.</p>
-                        </div>
-                        <div className="flex gap-2.5">
-                          <span className="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold shrink-0 text-[10px]">5</span>
-                          <p>Cliquez sur <strong>Add domain</strong> (Ajouter un domaine), collez <strong className="text-slate-900 font-bold">{typeof window !== 'undefined' ? window.location.hostname : 'votre-domaine.vercel.app'}</strong> et enregistrez !</p>
+                        <div className="space-y-3 pt-2">
+                          <p className="text-xs font-black text-slate-900 uppercase tracking-wider">Comment corriger cela en 2 minutes :</p>
+                          
+                          <div className="space-y-2.5 text-xs text-slate-500 font-medium">
+                            <div className="flex gap-2.5">
+                              <span className="w-5 h-5 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold shrink-0 text-[10px]">1</span>
+                              <p>Allez sur votre <a href="https://console.firebase.google.com/" target="_blank" rel="noreferrer" className="text-emerald-600 font-bold underline">Console Firebase</a> et sélectionnez votre projet.</p>
+                            </div>
+                            <div className="flex gap-2.5">
+                              <span className="w-5 h-5 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold shrink-0 text-[10px]">2</span>
+                              <p>Dans la barre latérale gauche, cliquez sur <strong>Authentication</strong> (rubrique Build).</p>
+                            </div>
+                            <div className="flex gap-2.5">
+                              <span className="w-5 h-5 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold shrink-0 text-[10px]">3</span>
+                              <p>Cliquez sur l'onglet <strong>Settings</strong> (Paramètres) tout en haut.</p>
+                            </div>
+                            <div className="flex gap-2.5">
+                              <span className="w-5 h-5 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold shrink-0 text-[10px]">4</span>
+                              <p>Cliquez sur <strong>Authorized domains</strong> (Domaines autorisés) dans le mini-menu de gauche.</p>
+                            </div>
+                            <div className="flex gap-2.5">
+                              <span className="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold shrink-0 text-[10px]">5</span>
+                              <p>Cliquez sur <strong>Add domain</strong> (Ajouter un domaine), collez <strong className="text-slate-900 font-bold">{typeof window !== 'undefined' ? window.location.hostname : 'votre-domaine.vercel.app'}</strong> et enregistrez !</p>
+                            </div>
+                          </div>
                         </div>
                       </div>
+                    );
+                  }
+
+                  if (isApiKeyError) {
+                    return (
+                      <div className="space-y-4">
+                        <p className="text-xs text-slate-600 font-medium leading-relaxed">
+                          Cette erreur se produit car votre déploiement Vercel n'a pas accès aux clés de configuration Firebase. Comme le fichier <code className="font-mono bg-slate-100 px-1 py-0.5 rounded text-rose-600 text-[11px]">firebase-applet-config.json</code> est ignoré par Git pour des raisons de sécurité, vous devez renseigner ces informations en tant que <strong>variables d'environnement</strong> sur Vercel.
+                        </p>
+
+                        <div className="space-y-3 pt-2">
+                          <p className="text-xs font-black text-slate-900 uppercase tracking-wider">Comment configurer Vercel en 2 minutes :</p>
+                          
+                          <div className="space-y-2.5 text-xs text-slate-500 font-medium">
+                            <div className="flex gap-2.5">
+                              <span className="w-5 h-5 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold shrink-0 text-[10px]">1</span>
+                              <p>Allez sur votre tableau de bord <a href="https://vercel.com" target="_blank" rel="noreferrer" className="text-emerald-600 font-bold underline">Vercel</a> et ouvrez votre projet.</p>
+                            </div>
+                            <div className="flex gap-2.5">
+                              <span className="w-5 h-5 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold shrink-0 text-[10px]">2</span>
+                              <p>Accédez à l'onglet <strong>Settings</strong> (Paramètres), puis cliquez sur <strong>Environment Variables</strong> dans le menu de gauche.</p>
+                            </div>
+                            <div className="flex gap-2.5">
+                              <span className="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold shrink-0 text-[10px]">3</span>
+                              <p>Copiez le bloc de configuration d'environnement que l'assistant vient de vous écrire dans la discussion de chat d'AI Studio, et <strong>collez-le directement</strong> dans le premier champ sur Vercel : il va générer toutes les clés d'un coup de manière magique !</p>
+                            </div>
+                            <div className="flex gap-2.5">
+                              <span className="w-5 h-5 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold shrink-0 text-[10px]">4</span>
+                              <p>Cliquez sur <strong>Save</strong> pour valider.</p>
+                            </div>
+                            <div className="flex gap-2.5">
+                              <span className="w-5 h-5 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold shrink-0 text-[10px]">5</span>
+                              <p>Faites un <strong>Redeploy</strong> (Nouveau déploiement) de votre projet sur Vercel pour que le site puisse charger les clés.</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="space-y-4">
+                      <p className="text-xs text-slate-600 font-bold">Détails techniques de l'erreur brute :</p>
+                      <pre className="bg-slate-50 border border-slate-100 text-[10px] p-3.5 rounded-xl overflow-x-auto font-mono text-slate-700 whitespace-pre-wrap max-h-32">
+                        {authError.message}
+                      </pre>
+                      <p className="text-xs text-slate-500 leading-relaxed font-semibold">
+                        <strong>Recommandation :</strong> Assurez-vous d'avoir bien activé la connexion avec Google comme fournisseur dans l'onglet "Sign-in method" de votre console d'authentification Firebase.
+                      </p>
                     </div>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    <p className="text-xs text-slate-600 font-bold">Détails techniques de l'erreur brute :</p>
-                    <pre className="bg-slate-50 border border-slate-100 text-[10px] p-3.5 rounded-xl overflow-x-auto font-mono text-slate-700 whitespace-pre-wrap max-h-32">
-                      {authError.message}
-                    </pre>
-                    <p className="text-xs text-slate-500 leading-relaxed font-semibold">
-                      <strong>Recommandation :</strong> Assurez-vous d'avoir bien activé la connexion avec Google comme fournisseur dans l'onglet "Sign-in method" de votre console d'authentification Firebase.
-                    </p>
-                  </div>
-                )}
+                  );
+                })()}
 
                 <div className="pt-4 border-t border-slate-100 flex gap-3">
                   <button

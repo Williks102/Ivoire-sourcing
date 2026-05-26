@@ -12,6 +12,7 @@ import {
   Menu, 
   PlusCircle, 
   Star, 
+  User as UserIcon, 
   CheckCircle2, 
   Clock, 
   ChevronRight, 
@@ -67,7 +68,7 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
 interface DashboardViewProps {
   profile: UserProfile | null;
   user: User | null;
-  activeTab: 'overview' | 'verification' | 'my-jobs' | 'applications' | 'admin' | 'browse-candidates';
+  activeTab: 'overview' | 'verification' | 'my-jobs' | 'applications' | 'admin' | 'browse-candidates' | 'profile';
   setActiveTab: (tab: any) => void;
   onProfileUpdate: (p: UserProfile) => void;
   setView: (v: any) => void;
@@ -95,6 +96,7 @@ export function DashboardView({
   const [phoneNumber, setPhoneNumber] = useState<string>('');
   const [paymentError, setPaymentError] = useState<string>('');
   const [paymentStatusMessage, setPaymentStatusMessage] = useState<string>('');
+  const [previewCv, setPreviewCv] = useState<{ name: string; url: string } | null>(null);
   const [confirmation, setConfirmation] = useState<{
     title: string;
     message: string;
@@ -107,6 +109,12 @@ export function DashboardView({
   const [editBio, setEditBio] = useState(profile?.bio || '');
   const [editLocation, setEditLocation] = useState(profile?.location || '');
   const [editSkills, setEditSkills] = useState<string[]>(profile?.skills || []);
+  const [editPhone, setEditPhone] = useState(profile?.phone || '');
+  const [profileCvFile, setProfileCvFile] = useState<{ name: string; content?: string } | null>(
+    profile?.cvName ? { name: profile.cvName, content: profile.cvUrl } : null
+  );
+  const [isProfileCvDragging, setIsProfileCvDragging] = useState(false);
+  const profileFileInputRef = React.useRef<HTMLInputElement>(null);
   const [updatingProfile, setUpdatingProfile] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
 
@@ -210,6 +218,8 @@ export function DashboardView({
       setEditBio(profile.bio || '');
       setEditLocation(profile.location || '');
       setEditSkills(profile.skills || []);
+      setEditPhone(profile.phone || '');
+      setProfileCvFile(profile.cvName ? { name: profile.cvName, content: profile.cvUrl } : null);
     }
   }, [profile]);
 
@@ -226,6 +236,40 @@ export function DashboardView({
     }
   };
 
+  const handleProfileCvSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const file = e.target.files[0];
+      const reader = new FileReader();
+      reader.onload = () => {
+        setProfileCvFile({
+          name: file.name,
+          content: reader.result as string
+        });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleProfileCvDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsProfileCvDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const file = e.dataTransfer.files[0];
+      const reader = new FileReader();
+      reader.onload = () => {
+        setProfileCvFile({
+          name: file.name,
+          content: reader.result as string
+        });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const triggerProfileCvSelect = () => {
+    profileFileInputRef.current?.click();
+  };
+
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !profile) return;
@@ -238,6 +282,9 @@ export function DashboardView({
         bio: editBio,
         location: editLocation,
         skills: editSkills,
+        phone: editPhone,
+        cvName: profileCvFile ? profileCvFile.name : '',
+        cvUrl: profileCvFile ? profileCvFile.content : '',
       };
       await setDoc(doc(db, 'users', user.uid), updated);
       onProfileUpdate(updated);
@@ -792,6 +839,7 @@ export function DashboardView({
 
   const menuItems = [
     { id: 'overview', label: "Aperçu", icon: <LayoutDashboard className="h-4 w-4" />, roles: ['candidate', 'employer', 'admin'] },
+    { id: 'profile', label: "Mon Profil", icon: <UserIcon className="h-4 w-4" />, roles: ['candidate', 'employer', 'admin'] },
     { id: 'browse-candidates', label: "Trouver du personnel", icon: <Users className="h-4 w-4" />, roles: ['employer'] },
     { id: 'my-jobs', label: "Gérer mes annonces", icon: <BarChart3 className="h-4 w-4" />, roles: ['employer'] },
     { id: 'applications', label: profile.role === 'employer' ? "Candidatures reçues" : "Mes postulations", icon: <Briefcase className="h-4 w-4" />, roles: ['candidate', 'employer'] },
@@ -1052,91 +1100,6 @@ export function DashboardView({
                            </div>
                         </div>
                       )}
-
-                      {/* Profile Settings form card */}
-                      <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden p-8">
-                         <h3 className="font-bold text-slate-800 tracking-tight text-lg mb-6">Paramètres du profil</h3>
-                         
-                         {successMsg && (
-                           <div className="mb-4 bg-emerald-50 border border-emerald-100 text-emerald-700 px-4 py-3 rounded-2xl text-xs font-bold animate-fade-in flex items-center gap-2">
-                             <CheckCircle2 className="h-4 w-4 shrink-0" />
-                             {successMsg}
-                           </div>
-                         )}
-
-                         <form onSubmit={handleSaveProfile} className="space-y-4">
-                            <div>
-                               <label className="text-[9px] uppercase font-black text-slate-400 block mb-1">Nom complet</label>
-                               <input 
-                                 type="text" 
-                                 required 
-                                 value={editName} 
-                                 onChange={e => setEditName(e.target.value)}
-                                 className="w-full bg-slate-50 px-4 py-2.5 rounded-xl border-none focus:ring-1 focus:ring-emerald-500 outline-none font-bold text-slate-800 text-sm" 
-                               />
-                            </div>
-
-                            <div>
-                               <label className="text-[9px] uppercase font-black text-slate-400 block mb-1">Localisation principale</label>
-                               <select 
-                                 value={editLocation} 
-                                 onChange={e => setEditLocation(e.target.value)}
-                                 className="w-full bg-slate-50 px-4 py-2.5 rounded-xl border-none focus:ring-1 focus:ring-emerald-500 outline-none font-bold text-slate-800 text-sm h-10" 
-                               >
-                                  <option value="">Sélectionner une ville...</option>
-                                  {CITIES.map(city => (
-                                    <option key={city} value={city}>{city}</option>
-                                  ))}
-                               </select>
-                            </div>
-
-                            <div>
-                               <label className="text-[9px] uppercase font-black text-slate-400 block mb-1">Biographie & Expérience</label>
-                               <textarea 
-                                 value={editBio} 
-                                 onChange={e => setEditBio(e.target.value)}
-                                 rows={3}
-                                 placeholder="Décrivez votre expérience et compétences..."
-                                 className="w-full bg-slate-50 px-4 py-2.5 rounded-xl border-none focus:ring-1 focus:ring-emerald-500 outline-none font-medium text-slate-700 text-xs leading-relaxed" 
-                               />
-                            </div>
-
-                            {profile.role === 'candidate' && (
-                              <div>
-                                 <label className="text-[9px] uppercase font-black text-slate-400 block mb-2">Mes compétences</label>
-                                 <div className="flex flex-wrap gap-1.5">
-                                    {['Cuisine locale', 'Garde enfants', 'Chauffeur', 'Entretien de maison', 'Lavage & Repassage', 'Soin animaux', 'Aide devoirs', 'Secourisme'].map(skill => {
-                                      const isSelected = editSkills.includes(skill);
-                                      return (
-                                        <button
-                                          type="button"
-                                          key={skill}
-                                          onClick={() => {
-                                            if (isSelected) {
-                                              setEditSkills(prev => prev.filter(s => s !== skill));
-                                            } else {
-                                              setEditSkills(prev => [...prev, skill]);
-                                            }
-                                          }}
-                                          className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase transition-all ${isSelected ? 'bg-slate-900 text-white shadow-sm' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'}`}
-                                        >
-                                          {skill}
-                                        </button>
-                                      );
-                                    })}
-                                 </div>
-                              </div>
-                            )}
-
-                            <button 
-                              type="submit" 
-                              disabled={updatingProfile}
-                              className="w-full mt-4 bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl font-bold text-xs uppercase tracking-wider transition-all shadow-md shadow-emerald-100 hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center h-11"
-                            >
-                               {updatingProfile ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div> : 'Enregistrer mon profil'}
-                            </button>
-                         </form>
-                      </div>
                    </div>
                 </div>
              </div>
@@ -1284,8 +1247,26 @@ export function DashboardView({
                                   </div>
                                 )}
                                 {app.cvName && (
-                                  <div className="bg-amber-50 text-amber-500 px-2.5 py-1 rounded-lg flex items-center gap-1.5 border border-amber-100/40 font-mono text-[10px]">
+                                  <div className="bg-amber-50 text-amber-500 px-2.5 py-1 rounded-lg flex flex-wrap items-center gap-1.5 border border-amber-100/40 font-mono text-[10px]">
                                      <span>📄</span> <span>CV: {app.cvName}</span>
+                                     {app.cvUrl && (
+                                       <div className="flex items-center gap-1.5 ml-2">
+                                         <button 
+                                           onClick={(e) => { e.stopPropagation(); setPreviewCv({ name: app.cvName!, url: app.cvUrl! }); }}
+                                           className="underline font-black text-amber-700 hover:text-amber-950 cursor-pointer"
+                                         >
+                                           [👁️ Visionner]
+                                         </button>
+                                         <a 
+                                           href={app.cvUrl} 
+                                           download={app.cvName}
+                                           className="underline font-black text-amber-700 hover:text-amber-950 cursor-pointer"
+                                           onClick={(e) => e.stopPropagation()}
+                                         >
+                                           [📥 Télécharger]
+                                         </a>
+                                       </div>
+                                     )}
                                   </div>
                                 )}
                              </div>
@@ -1853,7 +1834,29 @@ export function DashboardView({
                                               {resolvedJobs[app.jobId] || `Offre : ${app.jobId.substring(0,8)}`}
                                            </td>
                                            <td className="px-6 py-4 text-xs max-w-sm truncate text-slate-500 font-medium font-sans">
-                                              {app.message || '(Aucun message)'}{app.experienceYears !== undefined && <span className="ml-2 bg-emerald-50 text-emerald-600 text-[10px] px-1.5 py-0.5 rounded font-black">💼 {app.experienceYears} {app.experienceYears > 1 ? "ans" : "an"}</span>}{app.cvName && <span className="ml-2 bg-amber-50 text-amber-500 font-mono text-[9px] px-1.5 py-0.5 rounded font-bold">📄 CV: {app.cvName}</span>}
+                                              {app.message || '(Aucun message)'}{app.experienceYears !== undefined && <span className="ml-2 bg-emerald-50 text-emerald-600 text-[10px] px-1.5 py-0.5 rounded font-black">💼 {app.experienceYears} {app.experienceYears > 1 ? "ans" : "an"}</span>}{app.cvName && (
+                                                <span className="ml-2 bg-amber-50 text-amber-500 font-mono text-[9px] px-1.5 py-0.5 rounded font-bold inline-flex items-center gap-1">
+                                                  📄 CV: {app.cvName}
+                                                  {app.cvUrl && (
+                                                    <>
+                                                      <button 
+                                                        onClick={(e) => { e.stopPropagation(); setPreviewCv({ name: app.cvName!, url: app.cvUrl! }); }} 
+                                                        className="text-amber-800 hover:text-amber-950 cursor-pointer underline font-extrabold ml-1 scale-95"
+                                                      >
+                                                        [Visionner]
+                                                      </button>
+                                                      <a 
+                                                        href={app.cvUrl} 
+                                                        download={app.cvName} 
+                                                        onClick={(e) => e.stopPropagation()} 
+                                                        className="text-amber-800 hover:text-amber-950 cursor-pointer underline font-extrabold ml-1 scale-95"
+                                                      >
+                                                        [Télécharger]
+                                                      </a>
+                                                    </>
+                                                  )}
+                                                </span>
+                                              )}
                                            </td>
                                            <td className="px-6 py-4">
                                               <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider ${app.status === 'approved' || app.status === 'accepted' ? 'bg-emerald-50 text-emerald-600' : app.status === 'rejected' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'}`}>
@@ -1878,6 +1881,233 @@ export function DashboardView({
                        </div>
                     </div>
                  )}
+              </div>
+           )}
+
+           {activeTab === 'profile' && (
+              <div className="space-y-8 max-w-4xl animate-fade-in">
+                 <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                       <h2 className="text-2xl font-black text-slate-900 tracking-tight">Mon Profil Professionnel</h2>
+                       <p className="text-xs text-slate-400 font-bold uppercase tracking-wider font-sans mt-1">Gérez vos informations personnelles et votre CV pour postuler rapidement</p>
+                    </div>
+                    {successMsg && (
+                       <div className="bg-emerald-50 border border-emerald-100 text-emerald-800 px-4 py-2.5 rounded-2xl text-xs font-bold flex items-center gap-2 shadow-sm animate-bounce">
+                          <span>✅</span>
+                          <span>{successMsg}</span>
+                       </div>
+                    )}
+                 </header>
+
+                 <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-start">
+                    {/* Left Column: Avatar & Mini Stats card */}
+                    <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm p-6 text-center space-y-4">
+                       <span className="text-[10px] uppercase font-black text-slate-400 tracking-widest block">Photo Pro</span>
+                       <div className="relative w-28 h-28 mx-auto">
+                          <img 
+                            src={profile.photoURL || 'https://via.placeholder.com/150'} 
+                            alt={profile.displayName} 
+                            className="w-full h-full rounded-full border-4 border-slate-50 object-cover shadow-md"
+                          />
+                          <div className="absolute bottom-1 right-1 bg-emerald-600 border-2 border-white text-white p-1.5 rounded-full shadow-lg">
+                             <UserIcon className="h-4 w-4" />
+                          </div>
+                       </div>
+                       <div>
+                          <h3 className="font-bold text-slate-800 uppercase tracking-tight text-md">{profile.displayName}</h3>
+                          <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-1 bg-slate-100 rounded-full text-slate-500 inline-block mt-1">
+                             {profile.role === 'candidate' ? 'Candidat' : profile.role === 'employer' ? 'Recruteur / Employeur' : 'Administrateur'}
+                          </span>
+                       </div>
+
+                       <div className="border-t border-slate-50 pt-4 flex justify-around text-center">
+                          <div>
+                             <p className="text-xs font-black text-slate-800">{profile.role === 'candidate' ? apps.length : myJobs.length}</p>
+                             <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wider">{profile.role === 'candidate' ? 'Postulations' : 'Offres créées'}</p>
+                          </div>
+                          <div className="border-r border-slate-100 h-8 self-center"></div>
+                          <div>
+                             <p className="text-xs font-black text-slate-800">{profile.isVerified ? 'Oui' : 'Non'}</p>
+                             <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wider">Certifié</p>
+                          </div>
+                       </div>
+                    </div>
+
+                    {/* Right Column: Edit Form */}
+                    <div className="md:col-span-2 space-y-6">
+                       <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm p-8">
+                          <form onSubmit={handleSaveProfile} className="space-y-6">
+                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                                <div>
+                                   <label className="text-[10px] uppercase font-black text-slate-400 block mb-1.5">Nom Complet <span className="text-red-500">*</span></label>
+                                   <input 
+                                     type="text" 
+                                     required 
+                                     value={editName} 
+                                     onChange={e => setEditName(e.target.value)}
+                                     placeholder="Marie-Laure Kacou"
+                                     className="w-full bg-slate-50 px-4 py-3 rounded-xl border-none focus:ring-1 focus:ring-emerald-500 outline-none font-bold text-slate-800 text-xs h-11 transition-all" 
+                                   />
+                                </div>
+                                
+                                <div>
+                                   <label className="text-[10px] uppercase font-black text-slate-400 block mb-1.5">Numéro de Téléphone Direct <span className="text-red-500">*</span></label>
+                                   <input 
+                                     type="tel" 
+                                     required
+                                     placeholder="Ex: +225 07 48 92 11 02"
+                                     value={editPhone} 
+                                     onChange={e => setEditPhone(e.target.value)}
+                                     className="w-full bg-slate-50 px-4 py-3 rounded-xl border-none focus:ring-1 focus:ring-emerald-500 outline-none font-bold text-slate-800 text-xs h-11 transition-all" 
+                                   />
+                                </div>
+                             </div>
+
+                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                                <div>
+                                   <label className="text-[10px] uppercase font-black text-slate-400 block mb-1.5">Ville Principale</label>
+                                   <select 
+                                     value={editLocation} 
+                                     onChange={e => setEditLocation(e.target.value)}
+                                     className="w-full bg-slate-50 px-4 py-3 rounded-xl border-none focus:ring-1 focus:ring-emerald-500 outline-none font-bold text-slate-800 text-xs h-11 transition-all" 
+                                   >
+                                      <option value="">Sélectionner une ville...</option>
+                                      {CITIES.map(city => (
+                                        <option key={city} value={city}>{city}</option>
+                                      ))}
+                                   </select>
+                                </div>
+
+                                <div>
+                                   <label className="text-[10px] uppercase font-black text-slate-400 block mb-1.5">Adresse Email</label>
+                                   <input 
+                                     type="email" 
+                                     disabled 
+                                     value={profile.email} 
+                                     className="w-full bg-slate-100 cursor-not-allowed px-4 py-3 rounded-xl border-none outline-none font-bold text-slate-400 text-xs h-11" 
+                                   />
+                                </div>
+                             </div>
+
+                             <div>
+                                <label className="text-[10px] uppercase font-black text-slate-400 block mb-1.5">Biographie & Description</label>
+                                <textarea 
+                                  value={editBio} 
+                                  onChange={e => setEditBio(e.target.value)}
+                                  rows={3}
+                                  placeholder="Présentez brièvement vos atouts, horaires ou services..."
+                                  className="w-full bg-slate-50 px-4 py-3 rounded-xl border-none focus:ring-1 focus:ring-emerald-500 outline-none font-medium text-slate-700 text-xs leading-relaxed" 
+                                />
+                             </div>
+
+                             {profile.role === 'candidate' && (
+                                <div className="space-y-3">
+                                   <label className="text-[10px] uppercase font-black text-slate-400 block mb-2">Compétences Professionnelles</label>
+                                   <div className="flex flex-wrap gap-1.5">
+                                      {['Cuisine locale', 'Garde enfants', 'Chauffeur', 'Entretien de maison', 'Lavage & Repassage', 'Soin animaux', 'Aide devoirs', 'Secourisme'].map(skill => {
+                                        const isSelected = editSkills.includes(skill);
+                                        return (
+                                          <button
+                                            type="button"
+                                            key={skill}
+                                            onClick={() => {
+                                              if (isSelected) {
+                                                setEditSkills(prev => prev.filter(s => s !== skill));
+                                              } else {
+                                                setEditSkills(prev => [...prev, skill]);
+                                              }
+                                            }}
+                                            className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase transition-all ${isSelected ? 'bg-slate-900 text-white shadow-sm' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'}`}
+                                          >
+                                            {skill}
+                                          </button>
+                                        );
+                                      })}
+                                   </div>
+                                </div>
+                             )}
+
+                             {/* Candidate CV Section */}
+                             {profile.role === 'candidate' && (
+                                <div className="space-y-3 border-t border-slate-50 pt-6">
+                                   <label className="text-[10px] uppercase font-black text-slate-400 block">
+                                      Curriculum Vitae (CV) Officiel
+                                   </label>
+
+                                   {!profileCvFile ? (
+                                      <div 
+                                        onDragOver={(e) => { e.preventDefault(); setIsProfileCvDragging(true); }}
+                                        onDragLeave={() => setIsProfileCvDragging(false)}
+                                        onDrop={handleProfileCvDrop}
+                                        onClick={triggerProfileCvSelect}
+                                        className={`border-2 border-dashed rounded-3xl p-6 text-center cursor-pointer transition-all ${
+                                          isProfileCvDragging 
+                                            ? 'border-emerald-500 bg-emerald-50/20' 
+                                            : 'border-slate-200 hover:border-emerald-400 hover:bg-slate-50/50'
+                                        }`}
+                                      >
+                                         <input 
+                                           type="file" 
+                                           ref={profileFileInputRef} 
+                                           onChange={handleProfileCvSelect} 
+                                           accept=".pdf,.doc,.docx" 
+                                           className="hidden" 
+                                         />
+                                         <UploadCloud className="h-8 w-8 text-slate-400 mx-auto mb-2" />
+                                         <p className="text-xs font-bold text-slate-750">Parcourez ou glissez votre CV ici</p>
+                                         <p className="text-[10px] text-slate-400 mt-1">Sert de CV par défaut pour postuler en 1 clic</p>
+                                      </div>
+                                   ) : (
+                                      <div className="bg-emerald-50/50 border border-emerald-100 rounded-2xl p-4 flex items-center justify-between">
+                                         <div className="flex items-center gap-3">
+                                            <div className="w-9 h-9 bg-emerald-600 text-white rounded-xl flex items-center justify-center font-bold text-sm">
+                                               📄
+                                            </div>
+                                            <div className="min-w-0">
+                                               <p className="text-xs font-bold text-slate-800 truncate max-w-[200px]">{profileCvFile.name}</p>
+                                               <div className="flex items-center gap-1.5 mt-0.5">
+                                                  <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1 rounded font-black uppercase">ENREGISTRÉ</span>
+                                                  {profileCvFile.content && (
+                                                    <button 
+                                                      type="button"
+                                                      onClick={() => setPreviewCv({ name: profileCvFile.name, url: profileCvFile.content! })}
+                                                      className="text-[9px] underline font-bold text-emerald-700 hover:text-emerald-900"
+                                                    >
+                                                      [👁️ Aperçu]
+                                                    </button>
+                                                  )}
+                                               </div>
+                                            </div>
+                                         </div>
+                                         <button 
+                                           type="button" 
+                                           onClick={() => setProfileCvFile(null)}
+                                           className="p-1.5 hover:bg-emerald-100 rounded-lg text-emerald-800 transition-all font-semibold"
+                                         >
+                                            <Trash2 className="h-4 w-4 text-red-500" />
+                                         </button>
+                                      </div>
+                                   )}
+                                </div>
+                             )}
+
+                             <div className="border-t border-slate-55 pt-6 flex justify-end">
+                                <button 
+                                  type="submit" 
+                                  disabled={updatingProfile}
+                                  className="px-8 py-3 bg-emerald-600 hover:bg-emerald-700 hover:scale-[1.01] active:scale-[0.99] transition-all text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-emerald-50 flex items-center justify-center gap-2 h-11"
+                                >
+                                   {updatingProfile ? (
+                                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                                   ) : (
+                                      <>Enregistrer les modifications</>
+                                   )}
+                                </button>
+                             </div>
+                          </form>
+                       </div>
+                    </div>
+                 </div>
               </div>
            )}
 
@@ -2410,8 +2640,25 @@ export function DashboardView({
                                 </span>
                               )}
                               {selectedApplication.cvName && (
-                                <span className="bg-amber-50 text-amber-600 px-3 py-1.5 rounded-xl border border-amber-150">
-                                  📄 CV: {selectedApplication.cvName}
+                                <span className="bg-amber-50 text-amber-600 px-3 py-1.5 rounded-xl border border-amber-150 inline-flex flex-wrap items-center gap-2">
+                                  📄 CV : {selectedApplication.cvName}
+                                  {selectedApplication.cvUrl && (
+                                    <div className="flex gap-2 text-[10px] uppercase font-black tracking-wider">
+                                      <button 
+                                        onClick={() => setPreviewCv({ name: selectedApplication.cvName!, url: selectedApplication.cvUrl! })}
+                                        className="underline font-black text-amber-800 hover:text-amber-950 cursor-pointer"
+                                      >
+                                        [👁️ Visionner]
+                                      </button>
+                                      <a 
+                                        href={selectedApplication.cvUrl} 
+                                        download={selectedApplication.cvName}
+                                        className="underline font-black text-amber-800 hover:text-amber-950 cursor-pointer"
+                                      >
+                                        [📥 Télécharger]
+                                      </a>
+                                    </div>
+                                  )}
                                 </span>
                               )}
                             </div>
@@ -2723,6 +2970,89 @@ export function DashboardView({
                 src={zoomedFileUrl} 
                 className="max-w-full max-h-[90vh] object-contain rounded-2xl shadow-2xl" 
               />
+            </div>
+          )}
+
+          {previewCv && (
+            <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-[150] flex items-center justify-center p-4">
+              <motion.div 
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                className="bg-white rounded-[32px] w-full max-w-4xl h-[85vh] overflow-hidden shadow-2xl flex flex-col border border-slate-100"
+              >
+                {/* Modal Header */}
+                <div className="px-6 py-4 border-b border-slate-150 bg-slate-50/50 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center border border-amber-100 text-xl">
+                      📄
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-black text-slate-800 truncate max-w-[200px] sm:max-w-md uppercase tracking-tight">
+                        CV : {previewCv.name}
+                      </h4>
+                      <p className="text-[10px] font-medium text-slate-400">
+                        Aperçu sécurisé du document candidat
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <a 
+                      href={previewCv.url} 
+                      download={previewCv.name}
+                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 hover:scale-[1.02] active:scale-[0.98] transition-all text-white rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 shadow-sm shadow-emerald-500/10 cursor-pointer"
+                    >
+                      <span>📥</span>
+                      <span>Télécharger</span>
+                    </a>
+                    
+                    <a 
+                      href={previewCv.url} 
+                      target="_blank" 
+                      rel="noreferrer"
+                      className="px-3 py-2 bg-slate-100 hover:bg-slate-200 transition-colors text-slate-600 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <span>🗎</span>
+                      <span className="hidden sm:inline">Nouvel Onglet</span>
+                    </a>
+
+                    <button 
+                      onClick={() => setPreviewCv(null)} 
+                      className="w-10 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 transition-colors cursor-pointer"
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Modal Body / Viewport */}
+                <div className="flex-1 bg-slate-100 flex flex-col p-4 overflow-hidden justify-center items-center">
+                  {previewCv.url ? (
+                    previewCv.url.startsWith('data:image/') ? (
+                      <div className="overflow-auto max-w-full max-h-full flex justify-center items-center p-4">
+                        <img 
+                          src={previewCv.url} 
+                          alt={previewCv.name} 
+                          className="max-w-full max-h-[70vh] object-contain rounded-lg shadow-lg border border-slate-200 bg-white" 
+                        />
+                      </div>
+                    ) : (
+                      <iframe 
+                        src={previewCv.url} 
+                        className="w-full h-full rounded-2xl border border-slate-200 bg-white shadow-inner" 
+                        title="Aperçu du CV"
+                      />
+                    )
+                  ) : (
+                    <div className="text-center py-12 px-6">
+                       <span className="text-5xl block mb-4">⚠️</span>
+                       <p className="text-sm font-bold text-slate-700">Contenu indisponible</p>
+                       <p className="text-xs text-slate-400 mt-1">Le format de ce fichier ne permet pas un aperçu direct. Veuillez le télécharger.</p>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
             </div>
           )}
 

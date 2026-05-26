@@ -10,7 +10,8 @@ import {
   FileCheck, 
   Trash2, 
   CheckCircle2, 
-  AlertCircle 
+  AlertCircle,
+  Phone
 } from 'lucide-react';
 import { JobPost, UserProfile } from '../types';
 
@@ -22,7 +23,9 @@ interface ApplicationFormModalProps {
     candidateName: string;
     photoURL: string;
     experienceYears: number;
+    phone: string;
     cvName?: string;
+    cvUrl?: string;
     message: string;
   }) => void;
 }
@@ -31,9 +34,12 @@ export function ApplicationFormModal({ job, profile, onClose, onSubmit }: Applic
   if (!job) return null;
 
   const [name, setName] = useState(profile?.displayName || '');
+  const [phone, setPhone] = useState(profile?.phone || '');
   const [experience, setExperience] = useState<number>(1);
   const [selectedPhoto, setSelectedPhoto] = useState(profile?.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=200&auto=format&fit=crop');
-  const [cvFile, setCvFile] = useState<{ name: string; size: string } | null>(null);
+  const [cvFile, setCvFile] = useState<{ name: string; size: string; content?: string } | null>(
+    profile?.cvName ? { name: profile.cvName, size: 'Enregistré sur votre profil', content: profile.cvUrl } : null
+  );
   const [message, setMessage] = useState("Bonjour, je souhaite vivement proposer ma candidature pour ce poste. J'ai l'expérience requise et mon profil correspond tout à fait à vos attentes.");
   
   const [photoOptionType, setPhotoOptionType] = useState<'profile' | 'preset'>('profile');
@@ -54,20 +60,30 @@ export function ApplicationFormModal({ job, profile, onClose, onSubmit }: Applic
     setIsDragging(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const file = e.dataTransfer.files[0];
-      setCvFile({
-        name: file.name,
-        size: (file.size / 1024 / 1024).toFixed(2) + ' MB'
-      });
+      const reader = new FileReader();
+      reader.onload = () => {
+        setCvFile({
+          name: file.name,
+          size: (file.size / 1024 / 1024).toFixed(2) + ' MB',
+          content: reader.result as string
+        });
+      };
+      reader.readAsDataURL(file);
     }
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0];
-      setCvFile({
-        name: file.name,
-        size: (file.size / 1024 / 1024).toFixed(2) + ' MB'
-      });
+      const reader = new FileReader();
+      reader.onload = () => {
+        setCvFile({
+          name: file.name,
+          size: (file.size / 1024 / 1024).toFixed(2) + ' MB',
+          content: reader.result as string
+        });
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -81,11 +97,17 @@ export function ApplicationFormModal({ job, profile, onClose, onSubmit }: Applic
       alert("S'il vous plaît, renseignez votre nom complet.");
       return;
     }
+    if (!phone.trim()) {
+      alert("S'il vous plaît, renseignez votre numéro de téléphone.");
+      return;
+    }
     onSubmit({
       candidateName: name,
       photoURL: selectedPhoto,
       experienceYears: Number(experience),
+      phone: phone.trim(),
       cvName: cvFile ? cvFile.name : undefined,
+      cvUrl: cvFile ? cvFile.content : undefined,
       message: message
     });
   };
@@ -184,6 +206,20 @@ export function ApplicationFormModal({ job, profile, onClose, onSubmit }: Applic
                   placeholder="ex: Marie-Laure Kacou"
                   value={name}
                   onChange={e => setName(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1.5 flex items-center gap-1">
+                  <Phone className="h-3 w-3" /> Numéro de Téléphone Direct <span className="text-red-500">*</span>
+                </label>
+                <input 
+                  required
+                  type="tel" 
+                  className="w-full bg-slate-50 border-none focus:bg-white focus:ring-1 focus:ring-emerald-500 px-3 py-2 text-xs rounded-xl h-11 font-semibold outline-none text-slate-800"
+                  placeholder="ex: +225 07 48 92 11 02"
+                  value={phone}
+                  onChange={e => setPhone(e.target.value)}
                 />
               </div>
 

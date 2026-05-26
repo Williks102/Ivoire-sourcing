@@ -22,6 +22,8 @@ export interface UserProfile {
   averageRating: number;
   reviewCount: number;
   phone?: string;
+  cvName?: string;
+  cvUrl?: string;
   createdAt: string;
   verificationDocs?: VerificationDoc[];
 }
@@ -51,6 +53,7 @@ export interface Application {
   photoURL?: string;
   experienceYears?: number;
   cvName?: string;
+  cvUrl?: string;
 }
 
 export interface Review {
