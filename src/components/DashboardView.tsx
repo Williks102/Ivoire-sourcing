@@ -702,10 +702,16 @@ export function DashboardView({
           const docRef = doc(db, 'users', user.uid);
           const docSnap = await getDoc(docRef);
           if (docSnap.exists()) {
-            onProfileUpdate(docSnap.data() as UserProfile);
+            const parsed = docSnap.data() as UserProfile;
+            onProfileUpdate(parsed);
+            localStorage.setItem(`profile_${user.uid}`, JSON.stringify(parsed));
           }
         } catch (err) {
-          console.error("Delayed profile fetch error:", err);
+          console.warn("Delayed profile fetch failed or offline, accessing caching:", err);
+          const cached = localStorage.getItem(`profile_${user.uid}`);
+          if (cached) {
+            onProfileUpdate(JSON.parse(cached));
+          }
         }
       }
     };
@@ -1280,16 +1286,37 @@ export function DashboardView({
 
            {activeTab === 'my-jobs' && (
               <div className="space-y-6">
-                 <header className="flex items-center justify-between">
-                    <h2 className="text-xl font-black text-slate-800 tracking-tight">Mes Offres Publiées</h2>
+                 <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="space-y-1">
+                       <h2 className="text-xl font-black text-slate-800 tracking-tight">Mes Offres Publiées</h2>
+                       <p className="text-xs text-slate-400">Gérez, modifiez ou ajoutez de nouvelles offres d'emploi d'ici.</p>
+                    </div>
+                    <button
+                       onClick={() => setView('post-job')}
+                       className="flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-5 py-3 rounded-2xl shadow-lg shadow-emerald-100 hover:shadow-xl transition-all w-full sm:w-auto hover:scale-[1.02] active:scale-[0.98]"
+                    >
+                       <PlusCircle className="h-4 w-4" />
+                       Publier une offre
+                    </button>
                  </header>
                  {loadingData ? (
                    <div className="animate-pulse space-y-3">
                      {[1, 2].map(i => <div key={i} className="h-20 bg-slate-100 rounded-2xl"></div>)}
                    </div>
                  ) : myJobs.length === 0 ? (
-                   <div className="text-center py-10 text-slate-400">
-                      <p>Aucune annonce publiée pour le moment.</p>
+                   <div className="text-center py-12 px-6 bg-slate-50 border border-dashed border-slate-200 rounded-[24px] space-y-4">
+                     <Briefcase className="h-10 w-10 text-slate-300 mx-auto" />
+                     <div className="space-y-1 font-sans">
+                       <p className="font-bold text-slate-700 text-sm">Aucune offre publiée pour le moment</p>
+                       <p className="text-xs text-slate-400 max-w-sm mx-auto">Créez votre première annonce d'emploi pour commencer à recevoir des candidatures qualifiées dès aujourd'hui.</p>
+                     </div>
+                     <button
+                       onClick={() => setView('post-job')}
+                       className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-5 py-2.5 rounded-xl shadow-md shadow-emerald-100 hover:shadow-lg transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
+                     >
+                       <PlusCircle className="h-4 w-4" />
+                       Publier ma première offre
+                     </button>
                    </div>
                  ) : (
                    <div className="space-y-3">

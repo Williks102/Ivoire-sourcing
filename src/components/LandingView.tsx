@@ -167,7 +167,7 @@ export function LandingView({
   const [selCity, setSelCity] = useState<string>('Abidjan');
   const [selExperience, setSelExperience] = useState<number>(1);
   const [searchTriggered, setSearchTriggered] = useState<boolean>(false);
-  const [candidatesList, setCandidatesList] = useState<LocalDemoCandidate[]>(DEMO_CANDIDATES);
+  const [candidatesList, setCandidatesList] = useState<LocalDemoCandidate[]>([]);
   const [loadingCandidates, setLoadingCandidates] = useState<boolean>(false);
 
   // Active Selected Profile & Payment checkout
@@ -179,8 +179,8 @@ export function LandingView({
   const [paymentError, setPaymentError] = useState<string>('');
   const [paymentStatusMessage, setPaymentStatusMessage] = useState<string>('');
 
-  // Use either the real jobs list or fall back if none are loaded from firebase yet
-  const displayedJobs = jobs && jobs.length > 0 ? jobs.slice(0, 4) : FALLBACK_DEMO_JOBS;
+  // Use only the real/fetched jobs list, with no flat static mock fallback
+  const displayedJobs = jobs && jobs.length > 0 ? jobs.slice(0, 4) : [];
 
   // Sourcing logic - fetch matching candidates from Firestore or fallback to local demo
   const handleSourcingSearch = async (e: React.FormEvent) => {
@@ -504,72 +504,84 @@ export function LandingView({
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {displayedJobs.map((job) => (
-              <div 
-                key={job.id} 
-                onClick={() => onSelectJob(job)}
-                className={`bg-white border p-6 rounded-2xl transition-all hover:border-emerald-500/30 shadow-sm relative cursor-pointer group flex flex-col justify-between h-full hover:shadow-md ${job.isPremium ? 'border-emerald-500/20' : 'border-slate-150'}`}
-              >
-                {job.isPremium && (
-                  <div className="absolute top-4 right-4 bg-emerald-100 text-emerald-800 text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-widest">
-                    ★ Premium
-                  </div>
-                )}
-                
-                <div className="space-y-4">
-                  <div className="flex gap-4">
-                    <div className="w-12 h-12 bg-slate-50 flex items-center justify-center rounded-xl text-emerald-600 font-black text-xl border border-slate-100 shrink-0 uppercase shadow-xxs">
-                      {CATEGORIES.find(c => c.id === job.category)?.icon || '💼'}
-                    </div>
-                    <div className="min-w-0 text-left">
-                      <h4 className="font-extrabold text-slate-800 text-base leading-tight mb-1 truncate block pr-12">
-                        {job.title}
-                      </h4>
-                      <p className="text-[11px] text-slate-400 font-bold flex items-center gap-1">
-                        <MapPin className="h-3 w-3 text-slate-350 shrink-0" /> {job.location} • {new Date(job.createdAt).toLocaleDateString('fr-FR')}
-                      </p>
-                    </div>
-                  </div>
-
-                  <p className="text-slate-500 text-xs line-clamp-3 text-left leading-relaxed font-medium">
-                    {job.description}
-                  </p>
-                </div>
-
-                <div className="pt-4 mt-4 border-t border-slate-100 flex items-center justify-between gap-4">
-                  <div className="text-left">
-                    <span className="text-[9px] uppercase font-bold text-slate-400 block tracking-wider">Salaire estimé</span>
-                    <span className="text-base font-black text-emerald-600 whitespace-nowrap">
-                      {job.salaryRange} <span className="text-[9px] font-bold text-slate-400 uppercase">FCFA/m</span>
-                    </span>
-                  </div>
-                  
-                  <div className="flex gap-1.5 shrink-0">
-                    <button 
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onSelectJob(job);
-                      }}
-                      className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-lg transition-colors"
-                    >
-                      Détails
-                    </button>
-                    <button 
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        // triggers application flow direct
-                        onSelectJob(job);
-                      }}
-                      className="px-4 py-2 bg-slate-900 hover:bg-emerald-600 text-white font-bold text-xs rounded-lg transition-colors group-hover:scale-[1.02]"
-                    >
-                      Postuler
-                    </button>
-                  </div>
-                </div>
+          {displayedJobs.length === 0 ? (
+            <div className="col-span-full bg-white border border-slate-100 p-12 rounded-3xl text-center max-w-xl mx-auto shadow-sm space-y-4">
+              <div className="w-12 h-12 bg-emerald-50 rounded-full flex items-center justify-center mx-auto text-emerald-500">
+                <Briefcase className="h-6 w-6" />
               </div>
-            ))}
-          </div>
+              <p className="font-bold text-slate-800 text-sm">Aucune offre d'emploi active en ligne.</p>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Connectez-vous pour publier la toute première offre d'emploi ou parcourez notre portail !
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {displayedJobs.map((job) => (
+                <div 
+                  key={job.id} 
+                  onClick={() => onSelectJob(job)}
+                  className={`bg-white border p-6 rounded-2xl transition-all hover:border-emerald-500/30 shadow-sm relative cursor-pointer group flex flex-col justify-between h-full hover:shadow-md ${job.isPremium ? 'border-emerald-500/20' : 'border-slate-150'}`}
+                >
+                  {job.isPremium && (
+                    <div className="absolute top-4 right-4 bg-emerald-100 text-emerald-800 text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-widest block font-sans">
+                      ★ Premium
+                    </div>
+                  )}
+                  
+                  <div className="space-y-4">
+                    <div className="flex gap-4">
+                      <div className="w-12 h-12 bg-slate-50 flex items-center justify-center rounded-xl text-emerald-600 font-black text-xl border border-slate-100 shrink-0 uppercase shadow-xxs">
+                        {CATEGORIES.find(c => c.id === job.category)?.icon || '💼'}
+                      </div>
+                      <div className="min-w-0 text-left">
+                        <h4 className="font-extrabold text-slate-800 text-base leading-tight mb-1 truncate block pr-12 font-sans">
+                          {job.title}
+                        </h4>
+                        <p className="text-[11px] text-slate-400 font-bold flex items-center gap-1 font-sans">
+                          <MapPin className="h-3 w-3 text-slate-350 shrink-0" /> {job.location} • {new Date(job.createdAt).toLocaleDateString('fr-FR')}
+                        </p>
+                      </div>
+                    </div>
+
+                    <p className="text-slate-500 text-xs line-clamp-3 text-left leading-relaxed font-semibold font-sans">
+                      {job.description}
+                    </p>
+                  </div>
+
+                  <div className="pt-4 mt-4 border-t border-slate-100 flex items-center justify-between gap-4">
+                    <div className="text-left">
+                      <span className="text-[9px] uppercase font-bold text-slate-400 block tracking-wider font-sans">Salaire estimé</span>
+                      <span className="text-base font-black text-emerald-600 whitespace-nowrap font-sans">
+                        {job.salaryRange} <span className="text-[9px] font-bold text-slate-400 uppercase font-sans">FCFA/m</span>
+                      </span>
+                    </div>
+                    
+                    <div className="flex gap-1.5 shrink-0">
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSelectJob(job);
+                        }}
+                        className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-lg transition-colors font-sans"
+                      >
+                        Détails
+                      </button>
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          // triggers application flow direct
+                          onSelectJob(job);
+                        }}
+                        className="px-4 py-2 bg-slate-900 hover:bg-emerald-600 text-white font-bold text-xs rounded-lg transition-colors group-hover:scale-[1.02] font-sans"
+                      >
+                        Postuler
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </section>
 
@@ -683,18 +695,29 @@ export function LandingView({
                 <div key={item} className="h-64 bg-slate-100 animate-pulse rounded-3xl"></div>
               ))}
             </div>
+          ) : !searchTriggered && candidatesList.length === 0 ? (
+            <div className="bg-white border border-slate-100 p-12 rounded-3xl text-center max-w-xl mx-auto shadow-sm space-y-4">
+              <div className="w-12 h-12 bg-emerald-50 rounded-full flex items-center justify-center mx-auto text-emerald-500">
+                <Users className="h-6 w-6" />
+              </div>
+              <p className="font-bold text-slate-800 text-sm font-sans">Prêt à recruter du personnel qualifié ?</p>
+              <p className="text-xs text-slate-500 leading-relaxed font-sans">
+                Spécifiez votre besoin (rôle, ville, expérience) ci-dessus et cliquez sur <strong>Proposer des Profils</strong> pour explorer nos candidatures de confiance auditées.
+              </p>
+            </div>
           ) : searchTriggered && candidatesList.length === 0 ? (
             <div className="bg-slate-50 border border-slate-200/40 rounded-3xl p-12 text-center max-w-xl mx-auto space-y-4">
-              <p className="text-sm font-bold text-slate-500">Aucun collaborateur ne correspond à ces critères exacts.</p>
-              <p className="text-xs text-slate-450 leading-relaxed">Réduisez l'expérience minimum exigée ou élargissez votre localité pour obtenir de belles propositions d'embauches.</p>
+              <p className="text-sm font-bold text-slate-500 font-sans">Aucun collaborateur ne correspond à ces critères exacts.</p>
+              <p className="text-xs text-slate-450 leading-relaxed font-sans font-medium">Réduisez l'expérience minimum exigée ou élargissez votre localité pour obtenir de belles propositions d'embauches.</p>
               <button 
                 onClick={() => {
                   setSelCategory('nounou');
                   setSelCity('Abidjan');
                   setSelExperience(1);
-                  setCandidatesList(DEMO_CANDIDATES);
+                  setCandidatesList([]);
+                  setSearchTriggered(false);
                 }}
-                className="text-xs text-emerald-600 font-bold underline cursor-pointer"
+                className="text-xs text-emerald-600 font-bold underline cursor-pointer font-sans"
               >
                 Réinitialiser les filtres
               </button>

@@ -2,112 +2,79 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
-import localFirebaseConfig from '../../firebase-applet-config.json';
 
-// Helper to sanitize environment variables and configuration parameters (stripping unwanted quotes or whitespace)
-const cleanValue = (val: any): string => {
-  if (typeof val !== 'string') return val || '';
-  let trimmed = val.trim();
-  
-  // Handle double-quote-clumped values (e.g., 'ivoire-sourcing-db" VITE_FIREBASE_APP_ID="1:67...')
-  if (trimmed.includes('VITE_FIREBASE_')) {
-    const parts = trimmed.split(/VITE_FIREBASE_[A-Z_]+=/);
-    trimmed = parts[0].trim();
+// Nettoyage des chaînes de caractères (suppression des espaces et des guillemets éventuels)
+function cleanVal(val: string | undefined | null): string {
+  if (!val) return '';
+  let str = val.trim();
+  if ((str.startsWith('"') && str.endsWith('"')) || (str.startsWith("'") && str.endsWith("'"))) {
+    str = str.slice(1, -1);
   }
-  
-  if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
-    trimmed = trimmed.slice(1, -1).trim();
-  }
-  return trimmed.replace(/["']/g, ''); // strip any raw quotes
-};
+  return str.trim();
+}
 
-// Access VITE_ environment variables statically so Vite's static analyzer replaces them during bundle
-const envApiKey = import.meta.env.VITE_FIREBASE_API_KEY;
-const envAuthDomain = import.meta.env.VITE_FIREBASE_AUTH_DOMAIN;
-const envProjectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
-const envAppId = import.meta.env.VITE_FIREBASE_APP_ID;
-const envStorageBucket = import.meta.env.VITE_FIREBASE_STORAGE_BUCKET;
-const envMessagingSenderId = import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID;
-const envDatabaseId = import.meta.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID;
-
-// Advanced parser to repair client environment variables if they were clumped with other variables in a single string
-const parseClumpedEnvironment = () => {
-  const finalEnv = {
-    apiKey: cleanValue(envApiKey),
-    authDomain: cleanValue(envAuthDomain),
-    projectId: cleanValue(envProjectId),
-    appId: cleanValue(envAppId),
-    storageBucket: cleanValue(envStorageBucket),
-    messagingSenderId: cleanValue(envMessagingSenderId),
-    databaseId: cleanValue(envDatabaseId) || '(default)'
-  };
-
-  // Safe checks across environment keys to find if any contain parsed clumped data
-  const rawMetaEnv = import.meta.env || {};
-  for (const [key, val] of Object.entries(rawMetaEnv)) {
-    if (typeof val === 'string' && val.includes('VITE_FIREBASE_')) {
-      // Clumped string detected! Extract nested VITE_FIREBASE_ key-values
-      const matches = val.matchAll(/VITE_FIREBASE_([A-Z_]+)=["']?([^"'\s]+)["']?/g);
-      for (const match of matches) {
-        const subKey = match[1];
-        const subVal = match[2];
-        if (subKey === 'API_KEY') finalEnv.apiKey = cleanValue(subVal);
-        if (subKey === 'AUTH_DOMAIN') finalEnv.authDomain = cleanValue(subVal);
-        if (subKey === 'PROJECT_ID') finalEnv.projectId = cleanValue(subVal);
-        if (subKey === 'APP_ID') finalEnv.appId = cleanValue(subVal);
-        if (subKey === 'STORAGE_BUCKET') finalEnv.storageBucket = cleanValue(subVal);
-        if (subKey === 'MESSAGING_SENDER_ID') finalEnv.messagingSenderId = cleanValue(subVal);
-        if (subKey === 'FIRESTORE_DATABASE_ID') finalEnv.databaseId = cleanValue(subVal);
-      }
-    }
-  }
-  return finalEnv;
-};
-
-const fixedEnv = parseClumpedEnvironment();
-
-// Merge logic: Prioritize the local schema configuration (dynamic-superstate-85xj8) if it's available and has a valid projectId.
-// This prevents malformed/production environment variables in local workspace from overriding the sandbox database.
-const hasLocalConfig = localFirebaseConfig && localFirebaseConfig.projectId && localFirebaseConfig.projectId !== '';
-
+// Configuration Firebase chargée uniquement et explicitement via les variables d'environnement de Vite
 const firebaseConfig = {
-  apiKey: hasLocalConfig ? cleanValue(localFirebaseConfig.apiKey) : (fixedEnv.apiKey || ''),
-  authDomain: hasLocalConfig ? cleanValue(localFirebaseConfig.authDomain) : (fixedEnv.authDomain || ''),
-  projectId: hasLocalConfig ? cleanValue(localFirebaseConfig.projectId) : (fixedEnv.projectId || ''),
-  appId: hasLocalConfig ? cleanValue(localFirebaseConfig.appId) : (fixedEnv.appId || ''),
-  storageBucket: hasLocalConfig ? cleanValue(localFirebaseConfig.storageBucket) : (fixedEnv.storageBucket || ''),
-  messagingSenderId: hasLocalConfig ? cleanValue(localFirebaseConfig.messagingSenderId) : (fixedEnv.messagingSenderId || ''),
+  apiKey: cleanVal(import.meta.env.VITE_FIREBASE_API_KEY),
+  authDomain: cleanVal(import.meta.env.VITE_FIREBASE_AUTH_DOMAIN),
+  projectId: cleanVal(import.meta.env.VITE_FIREBASE_PROJECT_ID),
+  storageBucket: cleanVal(import.meta.env.VITE_FIREBASE_STORAGE_BUCKET),
+  messagingSenderId: cleanVal(import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID),
+  appId: cleanVal(import.meta.env.VITE_FIREBASE_APP_ID),
 };
 
-const databaseId = hasLocalConfig 
-  ? cleanValue(localFirebaseConfig.firestoreDatabaseId || '(default)') 
-  : (fixedEnv.databaseId || '(default)');
+const databaseId = cleanVal(import.meta.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID);
 
-// Robust initialization wrapper
+// Déclaration des variables d'instances
 let app;
 let db: any;
 let auth: any;
 let googleProvider: any;
 let isFirebaseAvailableByConfig = false;
 
-if (firebaseConfig.apiKey && firebaseConfig.apiKey !== '') {
+// DEBUG TEMPORAIRE - Chargement des variables d'environnement
+console.log("[FIREBASE DEBUG] Environment variables loaded:");
+console.log("  VITE_FIREBASE_API_KEY:", firebaseConfig.apiKey ? `✓ Présents (débute par ${firebaseConfig.apiKey.substring(0, 8)}... et finissait par ...${firebaseConfig.apiKey.slice(-4)})` : "✗ MANQUANT");
+console.log("  VITE_FIREBASE_PROJECT_ID:", firebaseConfig.projectId ? `✓ Présent (${firebaseConfig.projectId})` : "✗ MANQUANT");
+console.log("  VITE_FIREBASE_AUTH_DOMAIN:", firebaseConfig.authDomain ? `✓ Présent (${firebaseConfig.authDomain})` : "✗ MANQUANT");
+console.log("  Validation Clé API (commence par AIza et > 20) ? :", !!(firebaseConfig.apiKey && firebaseConfig.apiKey.startsWith('AIza') && firebaseConfig.apiKey.length > 20));
+
+// Tentative d'initialisation de Firebase de production si les clés requises sont définies et valides (non fakes/placeholders)
+const isKeyValid = firebaseConfig.apiKey && 
+                   firebaseConfig.projectId && 
+                   firebaseConfig.apiKey.startsWith('AIza') &&
+                   firebaseConfig.apiKey.length > 20 &&
+                   !firebaseConfig.apiKey.toLowerCase().includes('placeholder') &&
+                   !firebaseConfig.apiKey.toLowerCase().includes('votre') &&
+                   !firebaseConfig.apiKey.toLowerCase().includes('your_');
+
+if (isKeyValid) {
   try {
     app = initializeApp(firebaseConfig);
-    db = getFirestore(app, databaseId);
+    
+    // Initialisation de Firestore (avec la database ID spécifique ou la database par défaut)
+    db = databaseId && databaseId !== '(default)' ? getFirestore(app, databaseId) : getFirestore(app);
     auth = getAuth(app);
     googleProvider = new GoogleAuthProvider();
     isFirebaseAvailableByConfig = true;
-    console.log("[FIREBASE] Initialized successfully with Project ID:", firebaseConfig.projectId, "Database ID:", databaseId);
+    
+    console.log("[FIREBASE] Initialisation réussie uniquement avec les variables d'environnement de production !");
   } catch (err) {
-    console.error("[FIREBASE] Initialization failed during bootstrap:", err);
+    console.error("[FIREBASE] Échec de l'initialisation de l'instance Firebase :", err);
   }
 } else {
-  console.warn("[FIREBASE] No configuration keys loaded. Falling back to local offline mode.");
+  console.warn("[FIREBASE] Variables d'environnement de production non détectées (MODE DEMO/SIMULATION ACTIVÉ)");
 }
 
-export { db, auth, googleProvider, isFirebaseAvailableByConfig };
+// Export propre des instances et configurations pour le frontend
+export function disableFirebase() {
+  isFirebaseAvailableByConfig = false;
+  console.warn("[FIREBASE] Firebase has been programmatically disabled (switching to local demo mode).");
+}
+
+export { app, db, auth, googleProvider, isFirebaseAvailableByConfig };
+
 export const rawConfig = {
   ...firebaseConfig,
-  firestoreDatabaseId: databaseId
+  firestoreDatabaseId: databaseId || '(default)'
 };
-

@@ -32,7 +32,7 @@ import {
   Briefcase,
   FileCheck
 } from 'lucide-react';
-import { auth, db, googleProvider, rawConfig, isFirebaseAvailableByConfig } from './lib/firebase';
+import { auth, db, googleProvider, rawConfig, isFirebaseAvailableByConfig, disableFirebase } from './lib/firebase';
 import { UserProfile, JobPost, UserRole } from './types';
 import { LandingView } from './components/LandingView';
 import { JobListView, JobDetailView } from './components/JobListView';
@@ -151,6 +151,7 @@ export default function App() {
   const [successJob, setSuccessJob] = useState<JobPost | null>(null);
   const [applyingJob, setApplyingJob] = useState<JobPost | null>(null);
   const [authError, setAuthError] = useState<{ code: string; message: string } | null>(null);
+  const [attemptedRole, setAttemptedRole] = useState<UserRole>('candidate');
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -183,9 +184,38 @@ export default function App() {
       try {
         if (u) {
           const docRef = doc(db, 'users', u.uid);
-          const docSnap = await getDoc(docRef);
-          if (docSnap.exists()) {
-            setProfile(docSnap.data() as UserProfile);
+          let profileData: UserProfile | null = null;
+          try {
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+              profileData = docSnap.data() as UserProfile;
+              localStorage.setItem(`profile_${u.uid}`, JSON.stringify(profileData));
+            }
+          } catch (getDocErr: any) {
+            console.warn("[FIREBASE] getDoc failed or client offline. Proceeding to local storage fallback:", getDocErr);
+            const cached = localStorage.getItem(`profile_${u.uid}`);
+            if (cached) {
+              profileData = JSON.parse(cached);
+            } else {
+              // Graceful real-time fallback profile
+              profileData = {
+                uid: u.uid,
+                role: 'candidate',
+                displayName: u.displayName || 'Utilisateur Source',
+                email: u.email || '',
+                photoURL: u.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=200&auto=format&fit=crop',
+                skills: [],
+                isVerified: false,
+                isPremium: false,
+                averageRating: 0,
+                reviewCount: 0,
+                createdAt: new Date().toISOString()
+              };
+            }
+            setIsOffline(true);
+          }
+          if (profileData) {
+            setProfile(profileData);
           }
         } else {
           setProfile(null);
@@ -197,6 +227,22 @@ export default function App() {
         setLoading(false);
         clearTimeout(timer);
       }
+    }, (err: any) => {
+      console.error("[FIREBASE] Initial auth state error callback triggered:", err);
+      const isApiKeyErr = err.code === 'auth/api-key-not-valid' || 
+                          err.code === 'auth/invalid-api-key' ||
+                          (err.message && (
+                            err.message.toLowerCase().includes('api-key-not-valid') || 
+                            err.message.toLowerCase().includes('invalid-api-key') || 
+                            err.message.toLowerCase().includes('api key')
+                          ));
+      if (isApiKeyErr) {
+        console.warn("[FIREBASE] Invalid API Key detected on startup. Dynamic fallback to local simulation mode activated.");
+        disableFirebase();
+        addToast("⚠️ Clé API Firebase non valide configurée. Utilisation automatique du mode Simulation.", "info");
+      }
+      setLoading(false);
+      clearTimeout(timer);
     });
     return () => {
       if (unsubscribe) unsubscribe();
@@ -212,7 +258,7 @@ export default function App() {
 
   useEffect(() => {
     fetchJobs();
-  }, [selectedCategory, selectedCity]);
+  }, [selectedCategory, selectedCity, view]);
 
   const fetchJobs = async () => {
     try {
@@ -238,9 +284,11 @@ export default function App() {
       setIsOffline(false);
     } catch (err: any) {
       console.warn("Running in local simulation mode for jobs list:", err);
-      const localJobs = localStorage.getItem('offline_jobs');
-      if (localJobs) {
-        setJobs(JSON.parse(localJobs));
+      let allLocalJobs: JobPost[] = [];
+      const localJobsStr = localStorage.getItem('offline_jobs');
+      
+      if (localJobsStr) {
+        allLocalJobs = JSON.parse(localJobsStr);
       } else {
         const demoJobs: JobPost[] = [
           {
@@ -268,8 +316,22 @@ export default function App() {
              createdAt: new Date().toISOString()
           }
         ];
-        setJobs(demoJobs);
+        allLocalJobs = demoJobs;
+        localStorage.setItem('offline_jobs', JSON.stringify(demoJobs));
       }
+
+      // Filter local simulation jobs by category and city to match firebase logic
+      let filtered = [...allLocalJobs];
+      if (selectedCategory) {
+        filtered = filtered.filter(j => j.category === selectedCategory);
+      }
+      if (selectedCity) {
+        filtered = filtered.filter(j => j.location === selectedCity);
+      }
+
+      // Sort by newest created
+      filtered.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+      setJobs(filtered);
       setIsOffline(true);
     }
   };
@@ -326,6 +388,7 @@ export default function App() {
   };
 
   const handleLogin = async (role: UserRole) => {
+    setAttemptedRole(role);
     if (!isFirebaseAvailableByConfig || !rawConfig || !rawConfig.apiKey || rawConfig.apiKey === '') {
       // Automatic safety redirect to Demo Login if Firebase is empty/fails
       handleDemoLogin(role);
@@ -367,12 +430,24 @@ export default function App() {
       }
       setView('dashboard');
     } catch (err: any) {
+      const isApiKeyErr = err.code === 'auth/api-key-not-valid' || 
+                          err.code === 'auth/invalid-api-key' ||
+                          (err.message && (
+                            err.message.toLowerCase().includes('api-key-not-valid') || 
+                            err.message.toLowerCase().includes('invalid-api-key') || 
+                            err.message.toLowerCase().includes('api key')
+                          ));
+
       if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
         console.log("Connexion annulée ou demande popup de connexion interrompue :", err);
         addToast("Connexion annulée ou fermée par l'utilisateur.", 'info');
       } else if (err.code === 'auth/popup-blocked') {
         console.warn("Le popup de connexion a été bloqué par le navigateur :", err);
         addToast("Le popup de connexion a été bloqué par votre navigateur. Veuillez autoriser les fenêtres contextuelles ou utiliser les accès rapides de test.", 'error');
+      } else if (isApiKeyErr) {
+        console.warn("Clé API Firebase invalide détectée. Redirection vers le mode Démo d'évaluation.");
+        addToast("⚠️ Clé API Firebase non valide ou incomplète. Bascule automatique sur le mode Démo / Simulation.", "info");
+        handleDemoLogin(role);
       } else {
         console.error("Erreur de connexion:", err);
         setAuthError({
@@ -823,21 +898,30 @@ export default function App() {
                   );
                 })()}
 
-                <div className="pt-4 border-t border-slate-100 flex gap-3">
+                <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row gap-2.5">
+                  <button
+                    onClick={() => {
+                      setAuthError(null);
+                      handleDemoLogin(attemptedRole);
+                    }}
+                    className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer shadow-md shadow-emerald-50 flex items-center justify-center gap-1.5"
+                  >
+                    🛡️ Continuer en Mode Démo
+                  </button>
                   <button
                     onClick={() => {
                       if (typeof window !== 'undefined') {
                         navigator.clipboard.writeText(window.location.hostname);
-                        alert("Le nom de domaine '" + window.location.hostname + "' a été copié dans votre presse-papier !");
+                        addToast("Nom de domaine '" + window.location.hostname + "' copié dans le presse-papier !", 'info');
                       }
                     }}
-                    className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold uppercase tracking-wider rounded-xl transition-colors cursor-pointer"
+                    className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold uppercase tracking-wider rounded-xl transition-colors cursor-pointer animate-none"
                   >
                     📋 Copier le domaine
                   </button>
                   <button
                     onClick={() => setAuthError(null)}
-                    className="flex-1 py-3 bg-slate-900 hover:bg-black text-white text-xs font-extrabold uppercase tracking-wider rounded-xl transition-colors cursor-pointer"
+                    className="py-3 px-5 bg-slate-900 hover:bg-black text-white text-xs font-extrabold uppercase tracking-wider rounded-xl transition-colors cursor-pointer"
                   >
                     Fermer
                   </button>
