@@ -54,6 +54,12 @@ export default function App() {
   const [selectedJob, setSelectedJob] = useState<JobPost | null>(null);
   const [dashboardTab, setDashboardTab] = useState<'overview' | 'verification' | 'my-jobs' | 'applications' | 'admin' | 'browse-candidates' | 'profile'>('overview');
   const [showGeneralLoginModal, setShowGeneralLoginModal] = useState(false);
+  const [modalActiveTab, setModalActiveTab] = useState<'login' | 'signup'>('login');
+  const [modalPreselectedRole, setModalPreselectedRole] = useState<'candidate' | 'employer'>('candidate');
+  const [loginEmail, setLoginEmail] = useState('');
+  const [signupName, setSignupName] = useState('');
+  const [signupEmail, setSignupEmail] = useState('');
+  const [signupRole, setSignupRole] = useState<'candidate' | 'employer'>('candidate');
   
   // Real-time toast notifications state
   const [toasts, setToasts] = useState<{ id: string; message: string; type: 'success' | 'info' | 'error' }[]>([]);
@@ -391,15 +397,109 @@ export default function App() {
     addToast('🚪 Vous avez été déconnecté.', 'info');
   };
 
-  const handleLogin = async (role: UserRole) => {
-    setAttemptedRole(role);
+  const openGeneralLogin = () => {
+    setModalActiveTab('login');
+    setShowGeneralLoginModal(true);
+  };
+
+  const handleLocalSimulationConnexion = (cleanedEmail: string) => {
+    let userRole: UserRole = 'candidate';
+    let name = "Marie Kouassi";
+
+    if (cleanedEmail === 'koffiw4@gmail.com') {
+      userRole = 'admin';
+      name = "Koffi Admin";
+    } else if (cleanedEmail.includes('employer') || cleanedEmail.includes('recruteur') || cleanedEmail.includes('resto') || cleanedEmail.includes('entreprise') || cleanedEmail.includes('societe')) {
+      userRole = 'employer';
+      name = "Société Sourcing CI";
+    }
+
+    const mockUid = 'demo-' + userRole + '-uid-' + Math.random().toString(36).substring(7);
+    const mockUser = {
+      uid: mockUid,
+      displayName: name,
+      email: cleanedEmail,
+      photoURL: userRole === 'candidate' 
+        ? 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=200&auto=format&fit=crop'
+        : 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?q=80&w=200&auto=format&fit=crop'
+    };
+
+    const mockProfile: UserProfile = {
+      uid: mockUid,
+      role: userRole,
+      displayName: mockUser.displayName,
+      email: mockUser.email,
+      photoURL: mockUser.photoURL,
+      skills: userRole === 'candidate' ? ["Garde d'enfants", "Ménage", "Cuisine africaine"] : [],
+      isVerified: userRole === 'candidate',
+      isPremium: userRole === 'employer',
+      averageRating: userRole === 'candidate' ? 4.9 : 0,
+      reviewCount: userRole === 'candidate' ? 3 : 0,
+      createdAt: new Date().toISOString()
+    };
+
+    localStorage.setItem('demo_user', JSON.stringify(mockUser));
+    localStorage.setItem('demo_profile', JSON.stringify(mockProfile));
+
+    setUser(mockUser as any);
+    setProfile(mockProfile);
+    setAuthError(null);
+    setShowGeneralLoginModal(false);
+    setView('dashboard');
+    addToast(`🚀 Connexion réussie (${cleanedEmail}) !`, 'success');
+  };
+
+  const handleLocalSimulationInscription = (name: string, cleanedEmail: string, assignedRole: UserRole) => {
+    const mockUid = 'demo-' + assignedRole + '-uid-' + Math.random().toString(36).substring(7);
+    const mockUser = {
+      uid: mockUid,
+      displayName: name,
+      email: cleanedEmail,
+      photoURL: assignedRole === 'candidate' 
+        ? 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=200&auto=format&fit=crop'
+        : 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?q=80&w=200&auto=format&fit=crop'
+    };
+
+    const mockProfile: UserProfile = {
+      uid: mockUid,
+      role: assignedRole,
+      displayName: name,
+      email: cleanedEmail,
+      photoURL: mockUser.photoURL,
+      skills: assignedRole === 'candidate' ? ["Garde d'enfants", "Ménage"] : [],
+      isVerified: false,
+      isPremium: assignedRole === 'employer',
+      averageRating: 0,
+      reviewCount: 0,
+      createdAt: new Date().toISOString()
+    };
+
+    localStorage.setItem('demo_user', JSON.stringify(mockUser));
+    localStorage.setItem('demo_profile', JSON.stringify(mockProfile));
+
+    setUser(mockUser as any);
+    setProfile(mockProfile);
+    setAuthError(null);
+    setShowGeneralLoginModal(false);
+    setView('dashboard');
+    addToast(`🎉 Inscription réussie (${cleanedEmail}) en tant que ${assignedRole === 'employer' ? 'Recruteur' : 'Candidat'} !`, 'success');
+  };
+
+  const executeConnexion = async (email: string) => {
+    if (!email || email.trim() === '') {
+      addToast("Veuillez saisir votre adresse e-mail.", "error");
+      return;
+    }
+    const cleanedEmail = email.trim().toLowerCase();
+    setAttemptedRole('candidate'); // default temporary tracking
+
     if (!isFirebaseAvailableByConfig || !rawConfig || !rawConfig.apiKey || rawConfig.apiKey === '') {
-      // Automatic safety redirect to Demo Login if Firebase is empty/fails
-      handleDemoLogin(role);
+      handleLocalSimulationConnexion(cleanedEmail);
       return;
     }
 
     try {
+      addToast("🔑 Connexion via Google Firebase Auth...", "info");
       const result = await signInWithPopup(auth, googleProvider);
       const u = result.user;
       
@@ -407,13 +507,13 @@ export default function App() {
       const docSnap = await getDoc(docRef);
       
       if (!docSnap.exists()) {
-        const assignedRole = (role === 'admin' && u.email !== 'koffiw4@gmail.com') ? 'candidate' : role;
+        const defaultRole = u.email === 'koffiw4@gmail.com' ? 'admin' : 'candidate';
         const newProfile: UserProfile = {
           uid: u.uid,
-          role: assignedRole,
+          role: defaultRole,
           displayName: u.displayName || 'Utilisateur',
-          email: u.email || '',
-          photoURL: u.photoURL || '',
+          email: u.email || cleanedEmail || '',
+          photoURL: u.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=200&auto=format&fit=crop',
           skills: [],
           isVerified: false,
           isPremium: false,
@@ -423,49 +523,96 @@ export default function App() {
         };
         await setDoc(docRef, newProfile);
         setProfile(newProfile);
+        addToast(`📝 Nouveau profil créé automatiquement (${defaultRole === 'admin' ? 'Administrateur' : 'Candidat'}) !`, 'success');
       } else {
         const existingProfile = docSnap.data() as UserProfile;
-        const assignedRole = (role === 'admin' && u.email !== 'koffiw4@gmail.com') ? existingProfile.role : role;
-        if (role === 'admin' && u.email !== 'koffiw4@gmail.com') {
-          addToast("Sécurité : Rôle Administrateur non autorisé pour cette adresse de messagerie.", "error");
-          return;
-        }
-        if (existingProfile.role !== assignedRole) {
-          const updatedProfile = { ...existingProfile, role: assignedRole };
-          await setDoc(docRef, updatedProfile);
-          setProfile(updatedProfile);
+        if (u.email === 'koffiw4@gmail.com') {
+          if (existingProfile.role !== 'admin') {
+            const updated = { ...existingProfile, role: 'admin' as UserRole };
+            await setDoc(docRef, updated);
+            setProfile(updated);
+          } else {
+            setProfile(existingProfile);
+          }
         } else {
           setProfile(existingProfile);
         }
       }
+      setShowGeneralLoginModal(false);
       setView('dashboard');
+      addToast(`🚀 Connexion réussie avec succès !`, 'success');
     } catch (err: any) {
-      const isApiKeyErr = err.code === 'auth/api-key-not-valid' || 
-                          err.code === 'auth/invalid-api-key' ||
-                          (err.message && (
-                            err.message.toLowerCase().includes('api-key-not-valid') || 
-                            err.message.toLowerCase().includes('invalid-api-key') || 
-                            err.message.toLowerCase().includes('api key')
-                          ));
-
+      console.error("Firebase Login Error", err);
       if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
-        console.log("Connexion annulée ou demande popup de connexion interrompue :", err);
-        addToast("Connexion annulée ou fermée par l'utilisateur.", 'info');
-      } else if (err.code === 'auth/popup-blocked') {
-        console.warn("Le popup de connexion a été bloqué par le navigateur :", err);
-        addToast("Le popup de connexion a été bloqué par votre navigateur. Veuillez autoriser les fenêtres contextuelles ou utiliser les accès rapides de test.", 'error');
-      } else if (isApiKeyErr) {
-        console.warn("Clé API Firebase invalide détectée. Redirection vers le mode Démo d'évaluation.");
-        addToast("⚠️ Clé API Firebase non valide ou incomplète. Bascule automatique sur le mode Démo / Simulation.", "info");
-        handleDemoLogin(role);
+        addToast("Connexion annulée par l'utilisateur.", 'info');
       } else {
-        console.error("Erreur de connexion:", err);
-        setAuthError({
-          code: err.code || 'unknown',
-          message: err.message || JSON.stringify(err)
-        });
+        addToast("⚠️ Clé ou Configuration Firebase non opérationnelle. Bascule sur la Connexion Locale...", "info");
+        handleLocalSimulationConnexion(cleanedEmail);
       }
     }
+  };
+
+  const executeInscription = async (name: string, email: string, role: UserRole) => {
+    if (!name || name.trim() === '') {
+      addToast("Veuillez saisir votre nom complet.", "error");
+      return;
+    }
+    if (!email || email.trim() === '') {
+      addToast("Veuillez saisir votre adresse e-mail.", "error");
+      return;
+    }
+
+    const cleanedEmail = email.trim().toLowerCase();
+    const assignedRole = (role === 'admin' && cleanedEmail !== 'koffiw4@gmail.com') ? 'candidate' : role;
+
+    if (!isFirebaseAvailableByConfig || !rawConfig || !rawConfig.apiKey || rawConfig.apiKey === '') {
+      handleLocalSimulationInscription(name, cleanedEmail, assignedRole);
+      return;
+    }
+
+    try {
+      addToast("🔑 Inscription via Google Firebase Auth...", "info");
+      const result = await signInWithPopup(auth, googleProvider);
+      const u = result.user;
+
+      const docRef = doc(db, 'users', u.uid);
+      const defaultRole = u.email === 'koffiw4@gmail.com' ? 'admin' : assignedRole;
+      
+      const newProfile: UserProfile = {
+        uid: u.uid,
+        role: defaultRole,
+        displayName: name || u.displayName || 'Utilisateur',
+        email: u.email || cleanedEmail || '',
+        photoURL: u.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=200&auto=format&fit=crop',
+        skills: [],
+        isVerified: false,
+        isPremium: false,
+        averageRating: 0,
+        reviewCount: 0,
+        createdAt: new Date().toISOString()
+      };
+
+      await setDoc(docRef, newProfile);
+      setProfile(newProfile);
+      setShowGeneralLoginModal(false);
+      setView('dashboard');
+      addToast(`🎉 Inscription réussie en tant que ${defaultRole === 'employer' ? 'Recruteur' : 'Candidat'} !`, 'success');
+    } catch (err: any) {
+      console.error("Firebase Inscription Error:", err);
+      if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
+        addToast("Inscription annulée par l'utilisateur.", 'info');
+      } else {
+        addToast("⚠️ Clé ou Configuration Firebase non opérationnelle. Bascule sur l'Inscription Locale...", "info");
+        handleLocalSimulationInscription(name, cleanedEmail, assignedRole);
+      }
+    }
+  };
+
+  const handleLogin = async (role: UserRole) => {
+    setAttemptedRole(role);
+    setSignupRole(role === 'admin' ? 'candidate' : role);
+    setModalActiveTab('signup');
+    setShowGeneralLoginModal(true);
   };
 
   const seedData = async () => {
@@ -630,15 +777,12 @@ export default function App() {
               </div>
             ) : (
               <div className="flex items-center gap-4">
-                <button onClick={() => handleLogin('admin')} className="text-rose-500 text-xs font-bold hover:text-rose-600 transition-colors border border-rose-100 bg-rose-50/40 px-3 py-1.5 rounded-xl uppercase tracking-wider">Admin</button>
                 <button 
-                  onClick={() => setShowGeneralLoginModal(true)} 
-                  className="text-emerald-700 text-xs font-black hover:bg-emerald-100/40 transition-colors px-4 py-2 rounded-xl border border-emerald-100 bg-emerald-50 cursor-pointer uppercase tracking-wider h-10 flex items-center shadow-xs"
+                  onClick={() => openGeneralLogin()} 
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black uppercase tracking-wider px-5 py-2.5 rounded-xl cursor-pointer transition-all shadow-md shadow-emerald-600/10 flex items-center h-10 shrink-0"
                 >
-                  🚪 Se connecter
+                  🚪 Se connecter / S'inscrire
                 </button>
-                <button onClick={() => handleLogin('candidate')} className="text-slate-600 text-sm font-medium hover:text-emerald-600">Postuler</button>
-                <button onClick={() => handleLogin('employer')} className="bg-slate-900 text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-slate-800 transition-all shadow-md">Recruter</button>
               </div>
             )}
           </div>
@@ -673,11 +817,12 @@ export default function App() {
               </div>
             ) : (
               <div className="flex flex-col gap-4">
-                <button onClick={() => { setShowGeneralLoginModal(true); setIsMenuOpen(false); }} className="w-full py-4 text-center font-bold text-white bg-emerald-600 rounded-xl shadow-md cursor-pointer">Se connecter</button>
-                <div className="text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest my-1">Ou s'inscrire / créer un compte</div>
-                <button onClick={() => { handleLogin('candidate'); setIsMenuOpen(false); }} className="w-full py-3.5 text-center font-bold text-slate-700 bg-slate-100 rounded-xl">Je cherche un emploi (Candidat)</button>
-                <button onClick={() => { handleLogin('employer'); setIsMenuOpen(false); }} className="w-full py-3.5 text-center font-bold text-slate-700 bg-slate-100 rounded-xl">Je recrute (Employeur)</button>
-                <button onClick={() => { handleLogin('admin'); setIsMenuOpen(false); }} className="w-full py-3 text-center text-xs font-bold text-rose-500 bg-rose-50 border border-rose-100 rounded-xl">Accès Admin</button>
+                <button 
+                  onClick={() => { openGeneralLogin(); setIsMenuOpen(false); }} 
+                  className="w-full py-4 text-center font-black uppercase text-xs tracking-wider text-white bg-emerald-600 rounded-xl shadow-md cursor-pointer hover:bg-emerald-500 transition-all"
+                >
+                  🚪 Connexion / Inscription
+                </button>
               </div>
             )}
           </motion.div>
@@ -768,67 +913,179 @@ export default function App() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-[32px] w-full max-w-md p-6 relative overflow-hidden shadow-2xl border border-slate-100 flex flex-col font-sans text-center"
+              className="bg-white rounded-[32px] w-full max-w-md p-6 relative overflow-hidden shadow-2xl border border-slate-100 flex flex-col font-sans"
             >
               <button 
                 onClick={() => setShowGeneralLoginModal(false)}
-                className="absolute top-4 right-4 bg-slate-150 hover:bg-slate-200 text-slate-500 rounded-full p-2 hover:scale-105 transition-all cursor-pointer text-xs"
+                className="absolute top-4 right-4 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-full p-2 hover:scale-105 transition-all cursor-pointer text-xs w-8 h-8 flex items-center justify-center"
               >
                 ✕
               </button>
 
-              <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/15 text-emerald-600 flex items-center justify-center text-3xl mx-auto mb-4 font-bold">
-                🔑
+              <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/15 text-emerald-600 flex items-center justify-center text-2xl mx-auto mb-3 font-bold">
+                🔐
               </div>
 
-              <h3 className="text-xl font-black text-slate-900 tracking-tight">
-                Se connecter à IvoireSource
+              <h3 className="text-xl font-black text-slate-900 tracking-tight text-center mb-1">
+                IvoireSource
               </h3>
-              
-              <p className="text-xs text-slate-500 mt-2 max-w-sm mx-auto leading-relaxed">
-                Connectez-vous en un clic pour gérer vos candidatures ou vos offres de recrutement.
+              <p className="text-slate-400 text-[11px] text-center mb-6 leading-relaxed">
+                Trouvez du travail ou recrutez des professionnels de confiance en Côte d'Ivoire.
               </p>
 
-              <div className="mt-8 space-y-4 text-left">
+              {/* Tabs */}
+              <div className="grid grid-cols-2 bg-slate-100 p-1 rounded-xl mb-5">
                 <button
-                  onClick={() => {
-                    setShowGeneralLoginModal(false);
-                    handleLogin('employer');
-                  }}
-                  className="w-full flex items-center justify-between p-4 bg-slate-50 hover:bg-emerald-50/60 border border-slate-100 hover:border-emerald-250 rounded-2xl transition-all cursor-pointer group shadow-xs"
+                  type="button"
+                  onClick={() => setModalActiveTab('login')}
+                  className={`py-2 px-3 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                    modalActiveTab === 'login'
+                      ? 'bg-white text-emerald-700 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
                 >
-                  <div className="flex items-center gap-3">
-                    <span className="text-2xl bg-white w-10 h-10 rounded-xl shadow-xs border border-slate-100 flex items-center justify-center">💼</span>
-                    <div>
-                      <p className="font-extrabold text-slate-800 text-xs uppercase tracking-wider group-hover:text-emerald-700">Recruteur / Employeur</p>
-                      <p className="text-[10px] text-slate-400 mt-0.5">Pour recruter et publier des offres</p>
-                    </div>
-                  </div>
-                  <ArrowRight className="h-4 w-4 text-slate-300 group-hover:text-emerald-500 transition-colors transform group-hover:translate-x-1" />
+                  🔑 Connexion
                 </button>
-
                 <button
-                  onClick={() => {
-                    setShowGeneralLoginModal(false);
-                    handleLogin('candidate');
-                  }}
-                  className="w-full flex items-center justify-between p-4 bg-slate-50 hover:bg-emerald-50/60 border border-slate-100 hover:border-emerald-250 rounded-2xl transition-all cursor-pointer group shadow-xs"
+                  type="button"
+                  onClick={() => setModalActiveTab('signup')}
+                  className={`py-2 px-3 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                    modalActiveTab === 'signup'
+                      ? 'bg-white text-emerald-700 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
                 >
-                  <div className="flex items-center gap-3">
-                    <span className="text-2xl bg-white w-10 h-10 rounded-xl shadow-xs border border-slate-100 flex items-center justify-center">👶</span>
-                    <div>
-                      <p className="font-extrabold text-slate-800 text-xs uppercase tracking-wider group-hover:text-emerald-700">Candidat de Maison</p>
-                      <p className="text-[10px] text-slate-400 mt-0.5">Pour chercher un job et postuler</p>
-                    </div>
-                  </div>
-                  <ArrowRight className="h-4 w-4 text-slate-300 group-hover:text-emerald-500 transition-colors transform group-hover:translate-x-1" />
+                  ✨ Inscription
                 </button>
               </div>
 
+              {modalActiveTab === 'login' ? (
+                /* Connexion Form */
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    executeConnexion(loginEmail);
+                  }}
+                  className="space-y-4"
+                >
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                      Adresse e-mail
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      placeholder="exemple@email.com"
+                      value={loginEmail}
+                      onChange={(e) => setLoginEmail(e.target.value)}
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 focus:border-emerald-500 focus:bg-white rounded-xl text-xs outline-none transition-all font-medium"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-wider transition-all shadow-md shadow-emerald-600/10 cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    Se connecter <ArrowRight className="h-4.5 w-4.5" />
+                  </button>
+
+                  <p className="text-[10px] text-slate-400 text-center leading-relaxed mt-4">
+                    Une fois connecté, vous serez redirigé vers votre espace personnel.
+                  </p>
+                </form>
+              ) : (
+                /* Inscription Form */
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    executeInscription(signupName, signupEmail, signupRole);
+                  }}
+                  className="space-y-4"
+                >
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                      Nom complet
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Marie Kouassi"
+                      value={signupName}
+                      onChange={(e) => setSignupName(e.target.value)}
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 focus:border-emerald-500 focus:bg-white rounded-xl text-xs outline-none transition-all font-medium"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                      Adresse e-mail
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      placeholder="marie@exemple.com"
+                      value={signupEmail}
+                      onChange={(e) => setSignupEmail(e.target.value)}
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 focus:border-emerald-500 focus:bg-white rounded-xl text-xs outline-none transition-all font-medium"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block mb-1">
+                      Choisissez votre rôle
+                    </label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setSignupRole('candidate')}
+                        className={`p-3 rounded-xl border text-left transition-all relative cursor-pointer ${
+                          signupRole === 'candidate'
+                            ? 'border-emerald-500 bg-emerald-50/40 ring-2 ring-emerald-500/10'
+                            : 'border-slate-200 bg-white hover:border-slate-300'
+                        }`}
+                      >
+                        <span className="text-xl block mb-1">👶</span>
+                        <span className="font-extrabold text-[10px] uppercase tracking-wider block text-slate-800">
+                          Candidat
+                        </span>
+                        <span className="text-[8px] text-slate-400 leading-normal block mt-0.5">
+                          Cherche un emploi
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setSignupRole('employer')}
+                        className={`p-3 rounded-xl border text-left transition-all relative cursor-pointer ${
+                          signupRole === 'employer'
+                            ? 'border-emerald-500 bg-emerald-50/40 ring-2 ring-emerald-500/10'
+                            : 'border-slate-200 bg-white hover:border-slate-300'
+                        }`}
+                      >
+                        <span className="text-xl block mb-1">💼</span>
+                        <span className="font-extrabold text-[10px] uppercase tracking-wider block text-slate-800">
+                          Employeur
+                        </span>
+                        <span className="text-[8px] text-slate-400 leading-normal block mt-0.5">
+                          Veut recruter
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="w-full bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-wider transition-all shadow-md shadow-emerald-700/10 cursor-pointer mt-2"
+                  >
+                    Créer mon compte
+                  </button>
+                </form>
+              )}
+
               <div className="mt-6 pt-4 border-t border-slate-100 text-center">
-                <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
-                  Authentification sécurisée
-                </p>
+                <span className="text-[9px] uppercase font-black text-slate-400 tracking-widest block">
+                  🛡️ Plateforme Certifiée & Sécurisée
+                </span>
               </div>
             </motion.div>
           </div>

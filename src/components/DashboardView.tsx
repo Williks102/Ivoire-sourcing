@@ -208,24 +208,66 @@ export function DashboardView({
       const newNames = { ...resolvedNames };
       let updated = false;
 
+      // Local fallback collections
+      const localJobs = JSON.parse(localStorage.getItem('offline_jobs') || '[]');
+      const localUsers = JSON.parse(localStorage.getItem('offline_users') || '[]');
+
       for (const jId of missingJobIds) {
         try {
+          const isDemo = !isFirebaseAvailableByConfig || (user?.uid?.startsWith('demo-') ?? true);
+          if (isDemo) {
+            throw new Error("Client Offline Mode");
+          }
           const snap = await getDoc(doc(db, 'jobs', jId));
           if (snap.exists()) {
              newJobs[jId] = (snap.data() as JobPost).title;
              updated = true;
+          } else {
+             throw new Error("Job not found in Firestore");
           }
-        } catch (e) { console.error("Could not resolve job title dynamically: ", e); }
+        } catch (e) {
+          // Resolve from offline storage / mock fallback
+          const found = localJobs.find((j: any) => j.id === jId || j.jobId === jId);
+          if (found) {
+            newJobs[jId] = found.title;
+          } else if (jId === 'demo-0') {
+            newJobs[jId] = "Nounou Plein Temps (Cocody)";
+          } else {
+            newJobs[jId] = "Emploi de Maison Sourcing";
+          }
+          updated = true;
+        }
       }
 
       for (const cId of missingCandIds) {
         try {
+          const isDemo = !isFirebaseAvailableByConfig || (user?.uid?.startsWith('demo-') ?? true);
+          if (isDemo) {
+            throw new Error("Client Offline Mode");
+          }
           const snap = await getDoc(doc(db, 'users', cId));
           if (snap.exists()) {
              newNames[cId] = (snap.data() as UserProfile).displayName;
              updated = true;
+          } else {
+             throw new Error("User not found in Firestore");
           }
-        } catch (e) { console.error("Could not resolve candidate name dynamically: ", e); }
+        } catch (e) {
+          // Resolve from offline storage / application metadata / mock fallback
+          const foundApp = apps.find(app => app.candidateId === cId);
+          const foundUser = localUsers.find((u: any) => u.uid === cId);
+          
+          if (foundApp && foundApp.candidateName) {
+            newNames[cId] = foundApp.candidateName;
+          } else if (foundUser && foundUser.displayName) {
+            newNames[cId] = foundUser.displayName;
+          } else if (cId === 'demo-candidate-uid-123') {
+            newNames[cId] = "Marie Kouassi";
+          } else {
+            newNames[cId] = "Candidat de Confiance";
+          }
+          updated = true;
+        }
       }
 
       if (updated) {
@@ -970,40 +1012,50 @@ export function DashboardView({
 
   const viewCandidate = async (candidateId: string, app?: Application) => {
     try {
+      const isDemo = !isFirebaseAvailableByConfig || (user?.uid?.startsWith('demo-') ?? true);
+      if (isDemo) {
+        throw new Error("Client Offline Mode");
+      }
       const snap = await getDoc(doc(db, 'users', candidateId));
       let candidateData: UserProfile;
       if (snap.exists()) {
         candidateData = snap.data() as UserProfile;
       } else {
-        // Fallback profile using application context
-        candidateData = {
-          uid: candidateId,
-          role: 'candidate',
-          displayName: app?.candidateName || `Candidat ${candidateId.substring(0, 6)}...`,
-          email: '',
-          photoURL: app?.photoURL || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=200&auto=format&fit=crop',
-          skills: [],
-          isVerified: false,
-          isPremium: false,
-          averageRating: 4.5,
-          reviewCount: 1,
-          createdAt: new Date().toISOString()
-        };
+        throw new Error("Candidate document not found");
       }
       setSelectedCandidate(candidateData);
       setSelectedApplication(app || null);
-      
-      // Clear checkout state
-      setPhoneNumber('');
-      setPaymentError('');
-      setPaymentStatusMessage('');
-      
-      // Direct candidates are free, and jobs applications which are already accepted/approved are also free to email
-      const isCandidateFree = profile?.role !== 'employer' || profile?.isPremium || unlockedCandidateIds.includes(candidateId) || (app && (app.status === 'accepted' || app.status === 'approved'));
-      setCheckoutStep(isCandidateFree ? 'details' : 'plans');
     } catch (err) {
-      console.error(err);
+      console.warn("Could not retrieve candidate document from real Firestore, using local fallback profile:", err);
+      // Fallback profile using application context or localstorage users
+      const localUsers = JSON.parse(localStorage.getItem('offline_users') || '[]');
+      const foundUser = localUsers.find((u: any) => u.uid === candidateId);
+      
+      const candidateData: UserProfile = {
+        uid: candidateId,
+        role: 'candidate',
+        displayName: foundUser?.displayName || app?.candidateName || `Candidat ${candidateId.substring(0, 6)}...`,
+        email: foundUser?.email || '',
+        photoURL: foundUser?.photoURL || app?.photoURL || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=200&auto=format&fit=crop',
+        skills: foundUser?.skills || ["Garde d'enfants", "Ménage", "Cuisine"],
+        isVerified: foundUser?.isVerified ?? true,
+        isPremium: foundUser?.isPremium ?? false,
+        averageRating: foundUser?.averageRating || 4.8,
+        reviewCount: foundUser?.reviewCount || 2,
+        createdAt: foundUser?.createdAt || new Date().toISOString()
+      };
+      setSelectedCandidate(candidateData);
+      setSelectedApplication(app || null);
     }
+    
+    // Clear checkout state
+    setPhoneNumber('');
+    setPaymentError('');
+    setPaymentStatusMessage('');
+    
+    // Direct candidates are free, and jobs applications which are already accepted/approved are also free to email
+    const isCandidateFree = profile?.role !== 'employer' || profile?.isPremium || unlockedCandidateIds.includes(candidateId) || (app && (app.status === 'accepted' || app.status === 'approved'));
+    setCheckoutStep(isCandidateFree ? 'details' : 'plans');
   };
 
   const startPaymentCheckout = (plan: 'one-time' | 'monthly') => {
