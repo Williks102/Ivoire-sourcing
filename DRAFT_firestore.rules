@@ -15,7 +15,6 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Strict verified email check
     function isEmailVerified() {
       return isSignedIn() && request.auth.token.email_verified == true;
     }
