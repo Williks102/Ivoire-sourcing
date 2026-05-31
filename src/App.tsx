@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { 
   onAuthStateChanged, 
   signInWithPopup, 
-  signOut, 
+  signOut,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
   User as FirebaseUser 
 } from 'firebase/auth';
 import { 
@@ -57,8 +59,10 @@ export default function App() {
   const [modalActiveTab, setModalActiveTab] = useState<'login' | 'signup'>('login');
   const [modalPreselectedRole, setModalPreselectedRole] = useState<'candidate' | 'employer'>('candidate');
   const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
   const [signupName, setSignupName] = useState('');
   const [signupEmail, setSignupEmail] = useState('');
+  const [signupPassword, setSignupPassword] = useState('');
   const [signupRole, setSignupRole] = useState<'candidate' | 'employer'>('candidate');
   
   // Real-time toast notifications state
@@ -402,54 +406,99 @@ export default function App() {
     setShowGeneralLoginModal(true);
   };
 
-  const handleLocalSimulationConnexion = (cleanedEmail: string) => {
-    let userRole: UserRole = 'candidate';
-    let name = "Marie Kouassi";
+  const handleLocalSimulationConnexion = (cleanedEmail: string, password?: string) => {
+    const localUsersStr = localStorage.getItem('offline_users') || '[]';
+    const localUsers = JSON.parse(localUsersStr);
+    
+    let existing = localUsers.find((u: any) => u.email.toLowerCase() === cleanedEmail.toLowerCase());
+    
+    if (existing) {
+      if (password && existing.simulatedPassword && existing.simulatedPassword !== password) {
+        addToast("⚠️ Mot de passe incorrect pour ce compte simulé.", "error");
+        return;
+      }
+      
+      const mockUser = {
+        uid: existing.uid,
+        displayName: existing.displayName,
+        email: existing.email,
+        photoURL: existing.photoURL
+      };
+      
+      localStorage.setItem('demo_user', JSON.stringify(mockUser));
+      localStorage.setItem('demo_profile', JSON.stringify(existing));
+      
+      setUser(mockUser as any);
+      setProfile(existing);
+      setAuthError(null);
+      setShowGeneralLoginModal(false);
+      setView('dashboard');
+      addToast(`🚀 Connexion réussie (${cleanedEmail}) !`, 'success');
+    } else {
+      // Auto-inscription!
+      let userRole: UserRole = 'candidate';
+      let name = "Marie Kouassi";
 
-    if (cleanedEmail === 'koffiw4@gmail.com') {
-      userRole = 'admin';
-      name = "Koffi Admin";
-    } else if (cleanedEmail.includes('employer') || cleanedEmail.includes('recruteur') || cleanedEmail.includes('resto') || cleanedEmail.includes('entreprise') || cleanedEmail.includes('societe')) {
-      userRole = 'employer';
-      name = "Société Sourcing CI";
+      if (cleanedEmail === 'koffiw4@gmail.com') {
+        userRole = 'admin';
+        name = "Koffi Admin";
+      } else if (cleanedEmail.includes('employer') || cleanedEmail.includes('recruteur') || cleanedEmail.includes('resto') || cleanedEmail.includes('entreprise') || cleanedEmail.includes('societe')) {
+        userRole = 'employer';
+        name = "Société Sourcing CI";
+      }
+
+      const mockUid = 'demo-' + userRole + '-uid-' + Math.random().toString(36).substring(7);
+      const mockUser = {
+        uid: mockUid,
+        displayName: name,
+        email: cleanedEmail,
+        photoURL: userRole === 'candidate' 
+          ? 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=200&auto=format&fit=crop'
+          : 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?q=80&w=200&auto=format&fit=crop'
+      };
+
+      const mockProfile: UserProfile & { simulatedPassword?: string } = {
+        uid: mockUid,
+        role: userRole,
+        displayName: mockUser.displayName,
+        email: mockUser.email,
+        photoURL: mockUser.photoURL,
+        skills: userRole === 'candidate' ? ["Garde d'enfants", "Ménage", "Cuisine africaine"] : [],
+        isVerified: userRole === 'candidate',
+        isPremium: userRole === 'employer',
+        averageRating: userRole === 'candidate' ? 4.9 : 0,
+        reviewCount: userRole === 'candidate' ? 3 : 0,
+        createdAt: new Date().toISOString(),
+        simulatedPassword: password || ''
+      };
+
+      localUsers.push(mockProfile);
+      localStorage.setItem('offline_users', JSON.stringify(localUsers));
+
+      localStorage.setItem('demo_user', JSON.stringify(mockUser));
+      localStorage.setItem('demo_profile', JSON.stringify(mockProfile));
+
+      setUser(mockUser as any);
+      setProfile(mockProfile);
+      setAuthError(null);
+      setShowGeneralLoginModal(false);
+      setView('dashboard');
+      addToast(`✨ Compte démo créé automatiquement (${cleanedEmail}) !`, 'success');
     }
-
-    const mockUid = 'demo-' + userRole + '-uid-' + Math.random().toString(36).substring(7);
-    const mockUser = {
-      uid: mockUid,
-      displayName: name,
-      email: cleanedEmail,
-      photoURL: userRole === 'candidate' 
-        ? 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=200&auto=format&fit=crop'
-        : 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?q=80&w=200&auto=format&fit=crop'
-    };
-
-    const mockProfile: UserProfile = {
-      uid: mockUid,
-      role: userRole,
-      displayName: mockUser.displayName,
-      email: mockUser.email,
-      photoURL: mockUser.photoURL,
-      skills: userRole === 'candidate' ? ["Garde d'enfants", "Ménage", "Cuisine africaine"] : [],
-      isVerified: userRole === 'candidate',
-      isPremium: userRole === 'employer',
-      averageRating: userRole === 'candidate' ? 4.9 : 0,
-      reviewCount: userRole === 'candidate' ? 3 : 0,
-      createdAt: new Date().toISOString()
-    };
-
-    localStorage.setItem('demo_user', JSON.stringify(mockUser));
-    localStorage.setItem('demo_profile', JSON.stringify(mockProfile));
-
-    setUser(mockUser as any);
-    setProfile(mockProfile);
-    setAuthError(null);
-    setShowGeneralLoginModal(false);
-    setView('dashboard');
-    addToast(`🚀 Connexion réussie (${cleanedEmail}) !`, 'success');
   };
 
-  const handleLocalSimulationInscription = (name: string, cleanedEmail: string, assignedRole: UserRole) => {
+  const handleLocalSimulationInscription = (name: string, cleanedEmail: string, assignedRole: UserRole, password?: string) => {
+    const localUsersStr = localStorage.getItem('offline_users') || '[]';
+    const localUsers = JSON.parse(localUsersStr);
+    
+    let existing = localUsers.find((u: any) => u.email.toLowerCase() === cleanedEmail.toLowerCase());
+    
+    if (existing) {
+      addToast(`💡 Cet e-mail est déjà enregistré. Connexion automatique...`, "info");
+      handleLocalSimulationConnexion(cleanedEmail, password);
+      return;
+    }
+
     const mockUid = 'demo-' + assignedRole + '-uid-' + Math.random().toString(36).substring(7);
     const mockUser = {
       uid: mockUid,
@@ -460,7 +509,7 @@ export default function App() {
         : 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?q=80&w=200&auto=format&fit=crop'
     };
 
-    const mockProfile: UserProfile = {
+    const mockProfile: UserProfile & { simulatedPassword?: string } = {
       uid: mockUid,
       role: assignedRole,
       displayName: name,
@@ -471,8 +520,12 @@ export default function App() {
       isPremium: assignedRole === 'employer',
       averageRating: 0,
       reviewCount: 0,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      simulatedPassword: password || ''
     };
+
+    localUsers.push(mockProfile);
+    localStorage.setItem('offline_users', JSON.stringify(localUsers));
 
     localStorage.setItem('demo_user', JSON.stringify(mockUser));
     localStorage.setItem('demo_profile', JSON.stringify(mockProfile));
@@ -482,36 +535,72 @@ export default function App() {
     setAuthError(null);
     setShowGeneralLoginModal(false);
     setView('dashboard');
-    addToast(`🎉 Inscription réussie (${cleanedEmail}) en tant que ${assignedRole === 'employer' ? 'Recruteur' : 'Candidat'} !`, 'success');
+    addToast(`🎉 Inscription réussie (${cleanedEmail}) !`, 'success');
   };
 
-  const executeConnexion = async (email: string) => {
+  const executeConnexion = async (email: string, password?: string) => {
     if (!email || email.trim() === '') {
       addToast("Veuillez saisir votre adresse e-mail.", "error");
       return;
     }
+    if (!password || password.trim() === '') {
+      addToast("Veuillez saisir votre mot de passe.", "error");
+      return;
+    }
     const cleanedEmail = email.trim().toLowerCase();
-    setAttemptedRole('candidate'); // default temporary tracking
+    setAttemptedRole('candidate');
 
     if (!isFirebaseAvailableByConfig || !rawConfig || !rawConfig.apiKey || rawConfig.apiKey === '') {
-      handleLocalSimulationConnexion(cleanedEmail);
+      handleLocalSimulationConnexion(cleanedEmail, password);
       return;
     }
 
     try {
-      addToast("🔑 Connexion via Google Firebase Auth...", "info");
-      const result = await signInWithPopup(auth, googleProvider);
-      const u = result.user;
+      addToast("🔑 Authentification Firebase...", "info");
+      let u: any = null;
+      let isNewUser = false;
       
+      try {
+        // Attempt sign in
+        const loginResult = await signInWithEmailAndPassword(auth, cleanedEmail, password);
+        u = loginResult.user;
+      } catch (loginErr: any) {
+        console.warn("Connexion attempt failed, checking for auto-signup...", loginErr);
+        if (loginErr.code === 'auth/user-not-found' || loginErr.code === 'auth/invalid-credential' || loginErr.message?.includes('user-not-found')) {
+          try {
+            // Auto inscription since user does not exist
+            addToast("✨ Compte inexistant. Création automatique...", "info");
+            const signupResult = await createUserWithEmailAndPassword(auth, cleanedEmail, password);
+            u = signupResult.user;
+            isNewUser = true;
+          } catch (signupErr: any) {
+            if (signupErr.code === 'auth/email-already-in-use') {
+              throw new Error("Mot de passe incorrect ou informations de connexion invalides.");
+            } else {
+              throw signupErr;
+            }
+          }
+        } else if (loginErr.message?.includes('api-key-not-valid')) {
+          throw loginErr; // bubble up for the api-key fallback
+        } else {
+          throw loginErr;
+        }
+      }
+
+      if (!u) {
+        throw new Error("Authentification échouée.");
+      }
+
+      // Sync user profile in Firestore
       const docRef = doc(db, 'users', u.uid);
       const docSnap = await getDoc(docRef);
       
-      if (!docSnap.exists()) {
+      if (!docSnap.exists() || isNewUser) {
         const defaultRole = u.email === 'koffiw4@gmail.com' ? 'admin' : 'candidate';
         const newProfile: UserProfile = {
           uid: u.uid,
           role: defaultRole,
-          displayName: u.displayName || 'Utilisateur',
+          displayName: u.displayName || cleanedEmail.split('@')[0] || 'Utilisateur',
           email: u.email || cleanedEmail || '',
           photoURL: u.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=200&auto=format&fit=crop',
           skills: [],
@@ -523,7 +612,69 @@ export default function App() {
         };
         await setDoc(docRef, newProfile);
         setProfile(newProfile);
-        addToast(`📝 Nouveau profil créé automatiquement (${defaultRole === 'admin' ? 'Administrateur' : 'Candidat'}) !`, 'success');
+        addToast(`📝 Profil ${defaultRole === 'admin' ? 'Administrateur' : 'Candidat'} créé automatiquement !`, 'success');
+      } else {
+        const existingProfile = docSnap.data() as UserProfile;
+        if (u.email === 'koffiw4@gmail.com') {
+          if (existingProfile.role !== 'admin') {
+            const updated = { ...existingProfile, role: 'admin' as UserRole };
+            await setDoc(docRef, updated);
+            setProfile(updated);
+          } else {
+            setProfile(existingProfile);
+          }
+        } else {
+          setProfile(existingProfile);
+        }
+      }
+      
+      setShowGeneralLoginModal(false);
+      setView('dashboard');
+      addToast(isNewUser ? `🎉 Compte créé et connexion réussie !` : `🚀 Connexion réussie !`, 'success');
+    } catch (err: any) {
+      console.error("Firebase Login Error", err);
+      if (err.message && err.message.includes('api-key-not-valid')) {
+        addToast("⚠️ Clé ou Configuration Firebase non opérationnelle. Connexion via simulation locale...", "info");
+        handleLocalSimulationConnexion(cleanedEmail, password);
+      } else {
+        addToast(`⚠️ Identifiants incorrects ou Erreur : ${err.message || err.code}`, 'error');
+      }
+    }
+  };
+
+  const executeGoogleLogin = async () => {
+    if (!isFirebaseAvailableByConfig || !rawConfig || !rawConfig.apiKey || rawConfig.apiKey === '') {
+      addToast("💡 Mode démo - SSO Google simulé.", "info");
+      handleLocalSimulationConnexion("google-user@gmail.com");
+      return;
+    }
+
+    try {
+      addToast("🔑 Authentification Google...", "info");
+      const result = await signInWithPopup(auth, googleProvider);
+      const u = result.user;
+      
+      const docRef = doc(db, 'users', u.uid);
+      const docSnap = await getDoc(docRef);
+      
+      if (!docSnap.exists()) {
+        const defaultRole = u.email === 'koffiw4@gmail.com' ? 'admin' : 'candidate';
+        const newProfile: UserProfile = {
+          uid: u.uid,
+          role: defaultRole,
+          displayName: u.displayName || 'Utilisateur Google',
+          email: u.email || '',
+          photoURL: u.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=200&auto=format&fit=crop',
+          skills: [],
+          isVerified: false,
+          isPremium: false,
+          averageRating: 0,
+          reviewCount: 0,
+          createdAt: new Date().toISOString()
+        };
+        await setDoc(docRef, newProfile);
+        setProfile(newProfile);
+        addToast(`📝 Profil ${defaultRole === 'admin' ? 'Administrateur' : 'Candidat'} créé automatiquement !`, 'success');
       } else {
         const existingProfile = docSnap.data() as UserProfile;
         if (u.email === 'koffiw4@gmail.com') {
@@ -540,19 +691,19 @@ export default function App() {
       }
       setShowGeneralLoginModal(false);
       setView('dashboard');
-      addToast(`🚀 Connexion réussie avec succès !`, 'success');
+      addToast(`🚀 Connexion Google réussie !`, 'success');
     } catch (err: any) {
-      console.error("Firebase Login Error", err);
+      console.error("Firebase Google Login Error", err);
       if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
-        addToast("Connexion annulée par l'utilisateur.", 'info');
+        addToast("Connexion annulée.", 'info');
       } else {
-        addToast("⚠️ Clé ou Configuration Firebase non opérationnelle. Bascule sur la Connexion Locale...", "info");
-        handleLocalSimulationConnexion(cleanedEmail);
+        addToast("⚠️ Firebase non opérationnel. Bascule sur la simulation locale...", "info");
+        handleLocalSimulationConnexion("google-user@gmail.com");
       }
     }
   };
 
-  const executeInscription = async (name: string, email: string, role: UserRole) => {
+  const executeInscription = async (name: string, email: string, role: UserRole, password?: string) => {
     if (!name || name.trim() === '') {
       addToast("Veuillez saisir votre nom complet.", "error");
       return;
@@ -561,49 +712,95 @@ export default function App() {
       addToast("Veuillez saisir votre adresse e-mail.", "error");
       return;
     }
+    if (!password || password.trim() === '') {
+      addToast("Veuillez saisir votre mot de passe.", "error");
+      return;
+    }
 
     const cleanedEmail = email.trim().toLowerCase();
     const assignedRole = (role === 'admin' && cleanedEmail !== 'koffiw4@gmail.com') ? 'candidate' : role;
 
     if (!isFirebaseAvailableByConfig || !rawConfig || !rawConfig.apiKey || rawConfig.apiKey === '') {
-      handleLocalSimulationInscription(name, cleanedEmail, assignedRole);
+      handleLocalSimulationInscription(name, cleanedEmail, assignedRole, password);
       return;
     }
 
     try {
-      addToast("🔑 Inscription via Google Firebase Auth...", "info");
-      const result = await signInWithPopup(auth, googleProvider);
-      const u = result.user;
+      addToast("🔑 Inscription via Firebase Auth...", "info");
+      let u: any = null;
+      let shouldCreateProfile = false;
+
+      try {
+        const result = await createUserWithEmailAndPassword(auth, cleanedEmail, password);
+        u = result.user;
+        shouldCreateProfile = true;
+      } catch (signupErr: any) {
+        if (signupErr.code === 'auth/email-already-in-use') {
+          addToast("💡 Cet e-mail est déjà inscrit. Connexion automatique...", "info");
+          const loginResult = await signInWithEmailAndPassword(auth, cleanedEmail, password);
+          u = loginResult.user;
+        } else {
+          throw signupErr;
+        }
+      }
+
+      if (!u) {
+        throw new Error("Authentification échouée.");
+      }
 
       const docRef = doc(db, 'users', u.uid);
       const defaultRole = u.email === 'koffiw4@gmail.com' ? 'admin' : assignedRole;
       
-      const newProfile: UserProfile = {
-        uid: u.uid,
-        role: defaultRole,
-        displayName: name || u.displayName || 'Utilisateur',
-        email: u.email || cleanedEmail || '',
-        photoURL: u.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=200&auto=format&fit=crop',
-        skills: [],
-        isVerified: false,
-        isPremium: false,
-        averageRating: 0,
-        reviewCount: 0,
-        createdAt: new Date().toISOString()
-      };
+      if (shouldCreateProfile) {
+        const newProfile: UserProfile = {
+          uid: u.uid,
+          role: defaultRole,
+          displayName: name || u.displayName || 'Utilisateur',
+          email: u.email || cleanedEmail || '',
+          photoURL: u.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=200&auto=format&fit=crop',
+          skills: [],
+          isVerified: false,
+          isPremium: false,
+          averageRating: 0,
+          reviewCount: 0,
+          createdAt: new Date().toISOString()
+        };
 
-      await setDoc(docRef, newProfile);
-      setProfile(newProfile);
+        await setDoc(docRef, newProfile);
+        setProfile(newProfile);
+      } else {
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          setProfile(docSnap.data() as UserProfile);
+        } else {
+          const newProfile: UserProfile = {
+            uid: u.uid,
+            role: defaultRole,
+            displayName: name || 'Utilisateur',
+            email: u.email || cleanedEmail || '',
+            photoURL: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=200&auto=format&fit=crop',
+            skills: [],
+            isVerified: false,
+            isPremium: false,
+            averageRating: 0,
+            reviewCount: 0,
+            createdAt: new Date().toISOString()
+          };
+          await setDoc(docRef, newProfile);
+          setProfile(newProfile);
+        }
+      }
+
       setShowGeneralLoginModal(false);
       setView('dashboard');
-      addToast(`🎉 Inscription réussie en tant que ${defaultRole === 'employer' ? 'Recruteur' : 'Candidat'} !`, 'success');
+      addToast(shouldCreateProfile ? `🎉 Compte créé en tant que ${defaultRole === 'employer' ? 'Recruteur' : 'Candidat'} !` : `🚀 Connexion réussie !`, 'success');
     } catch (err: any) {
       console.error("Firebase Inscription Error:", err);
-      if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
-        addToast("Inscription annulée par l'utilisateur.", 'info');
+      if (err.message && err.message.includes('api-key-not-valid')) {
+        addToast("⚠️ Clé ou Configuration Firebase non opérationnelle. Inscription via simulation locale...", "info");
+        handleLocalSimulationInscription(name, cleanedEmail, assignedRole, password);
       } else {
-        addToast("⚠️ Clé ou Configuration Firebase non opérationnelle. Bascule sur l'Inscription Locale...", "info");
-        handleLocalSimulationInscription(name, cleanedEmail, assignedRole);
+        addToast(`⚠️ Échec de l'inscription : ${err.message || err.code}`, 'error');
       }
     }
   };
@@ -964,7 +1161,7 @@ export default function App() {
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
-                    executeConnexion(loginEmail);
+                    executeConnexion(loginEmail, loginPassword);
                   }}
                   className="space-y-4"
                 >
@@ -982,6 +1179,20 @@ export default function App() {
                     />
                   </div>
 
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                      Mot de passe
+                    </label>
+                    <input
+                      type="password"
+                      required
+                      placeholder="••••••••"
+                      value={loginPassword}
+                      onChange={(e) => setLoginPassword(e.target.value)}
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 focus:border-emerald-500 focus:bg-white rounded-xl text-xs outline-none transition-all font-medium"
+                    />
+                  </div>
+
                   <button
                     type="submit"
                     className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-wider transition-all shadow-md shadow-emerald-600/10 cursor-pointer flex items-center justify-center gap-2"
@@ -989,8 +1200,8 @@ export default function App() {
                     Se connecter <ArrowRight className="h-4.5 w-4.5" />
                   </button>
 
-                  <p className="text-[10px] text-slate-400 text-center leading-relaxed mt-4">
-                    Une fois connecté, vous serez redirigé vers votre espace personnel.
+                  <p className="text-[9px] text-slate-400 text-center leading-normal">
+                    * Si votre compte n'existe pas, il sera créé automatiquement avec ces identifiants.
                   </p>
                 </form>
               ) : (
@@ -998,7 +1209,7 @@ export default function App() {
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
-                    executeInscription(signupName, signupEmail, signupRole);
+                    executeInscription(signupName, signupEmail, signupRole, signupPassword);
                   }}
                   className="space-y-4"
                 >
@@ -1026,6 +1237,20 @@ export default function App() {
                       placeholder="marie@exemple.com"
                       value={signupEmail}
                       onChange={(e) => setSignupEmail(e.target.value)}
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 focus:border-emerald-500 focus:bg-white rounded-xl text-xs outline-none transition-all font-medium"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                      Mot de passe
+                    </label>
+                    <input
+                      type="password"
+                      required
+                      placeholder="••••••••"
+                      value={signupPassword}
+                      onChange={(e) => setSignupPassword(e.target.value)}
                       className="w-full px-4 py-3 bg-slate-50 border border-slate-200 focus:border-emerald-500 focus:bg-white rounded-xl text-xs outline-none transition-all font-medium"
                     />
                   </div>
@@ -1081,6 +1306,46 @@ export default function App() {
                   </button>
                 </form>
               )}
+
+              {/* Separators and Google Connection */}
+              <div className="relative my-4">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t border-slate-200" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-white px-2 text-slate-400 font-extrabold text-[9px] tracking-wider">OU</span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={executeGoogleLogin}
+                className="w-full bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold py-3 px-4 rounded-xl text-xs border border-slate-200 flex items-center justify-center gap-2 transition-all shadow-xs cursor-pointer focus:outline-none"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24">
+                  <path
+                    fill="#EA4335"
+                    d="M12 5.04c1.66 0 3.2.57 4.38 1.69l3.27-3.27C17.67 1.51 14.98 1 12 1 7.35 1 3.37 3.67 1.39 7.56l3.85 2.99c1-2.98 3.77-5.51 6.76-5.51z"
+                  />
+                  <path
+                    fill="#4285F4"
+                    d="M23.49 12.27c0-.81-.07-1.59-.2-2.36H12v4.51h6.46c-.29 1.48-1.14 2.73-2.4 3.58l3.73 2.89c2.18-2.01 3.7-4.99 3.7-8.62z"
+                  />
+                  <path
+                    fill="#FBBC05"
+                    d="M5.24 14.55c-.25-.76-.39-1.57-.39-2.55s.14-1.79.39-2.55L1.39 6.46C.5 8.26 0 10.07 0 12s.5 3.74 1.39 5.54l3.85-2.99z"
+                  />
+                  <path
+                    fill="#34A853"
+                    d="M12 23c3.24 0 5.97-1.09 7.96-2.96l-3.73-2.89c-1.14.77-2.6 1.25-4.23 1.25-2.99 0-5.76-2.53-6.76-5.51L1.39 15.9C3.37 19.79 7.35 23 12 23z"
+                  />
+                </svg>
+                Se connecter avec Google
+              </button>
+
+              <p className="text-[8px] text-slate-400 mt-4 leading-normal text-center bg-slate-50 p-2 rounded-lg border border-slate-100">
+                💡 Note : Pour utiliser votre propre Firebase, activez les options "Adresse e-mail/Mot de passe" et "Google" sous l'onglet <strong>Authentication &gt; Sign-in method</strong> de votre console Firebase.
+              </p>
 
               <div className="mt-6 pt-4 border-t border-slate-100 text-center">
                 <span className="text-[9px] uppercase font-black text-slate-400 tracking-widest block">
