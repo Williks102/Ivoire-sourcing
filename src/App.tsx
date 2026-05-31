@@ -53,6 +53,7 @@ export default function App() {
   const [jobs, setJobs] = useState<JobPost[]>([]);
   const [selectedJob, setSelectedJob] = useState<JobPost | null>(null);
   const [dashboardTab, setDashboardTab] = useState<'overview' | 'verification' | 'my-jobs' | 'applications' | 'admin' | 'browse-candidates' | 'profile'>('overview');
+  const [showGeneralLoginModal, setShowGeneralLoginModal] = useState(false);
   
   // Real-time toast notifications state
   const [toasts, setToasts] = useState<{ id: string; message: string; type: 'success' | 'info' | 'error' }[]>([]);
@@ -630,6 +631,12 @@ export default function App() {
             ) : (
               <div className="flex items-center gap-4">
                 <button onClick={() => handleLogin('admin')} className="text-rose-500 text-xs font-bold hover:text-rose-600 transition-colors border border-rose-100 bg-rose-50/40 px-3 py-1.5 rounded-xl uppercase tracking-wider">Admin</button>
+                <button 
+                  onClick={() => setShowGeneralLoginModal(true)} 
+                  className="text-emerald-700 text-xs font-black hover:bg-emerald-100/40 transition-colors px-4 py-2 rounded-xl border border-emerald-100 bg-emerald-50 cursor-pointer uppercase tracking-wider h-10 flex items-center shadow-xs"
+                >
+                  🚪 Se connecter
+                </button>
                 <button onClick={() => handleLogin('candidate')} className="text-slate-600 text-sm font-medium hover:text-emerald-600">Postuler</button>
                 <button onClick={() => handleLogin('employer')} className="bg-slate-900 text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-slate-800 transition-all shadow-md">Recruter</button>
               </div>
@@ -637,7 +644,7 @@ export default function App() {
           </div>
 
           {/* Mobile Menu Toggle */}
-          <button onClick={() => setIsMenuOpen(!isMenuOpen)} className="md:hidden p-2 text-slate-600">
+          <button onClick={() => setIsMenuOpen(!isMenuOpen)} className="md:hidden p-2 text-slate-600 animate-none">
             {isMenuOpen ? <X /> : <Menu />}
           </button>
         </nav>
@@ -666,8 +673,10 @@ export default function App() {
               </div>
             ) : (
               <div className="flex flex-col gap-4">
-                <button onClick={() => { handleLogin('candidate'); setIsMenuOpen(false); }} className="w-full py-4 text-center font-bold text-slate-700 bg-slate-100 rounded-xl">Je cherche un job</button>
-                <button onClick={() => { handleLogin('employer'); setIsMenuOpen(false); }} className="w-full py-4 text-center font-bold text-white bg-slate-900 rounded-xl">Je recrute</button>
+                <button onClick={() => { setShowGeneralLoginModal(true); setIsMenuOpen(false); }} className="w-full py-4 text-center font-bold text-white bg-emerald-600 rounded-xl shadow-md cursor-pointer">Se connecter</button>
+                <div className="text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest my-1">Ou s'inscrire / créer un compte</div>
+                <button onClick={() => { handleLogin('candidate'); setIsMenuOpen(false); }} className="w-full py-3.5 text-center font-bold text-slate-700 bg-slate-100 rounded-xl">Je cherche un emploi (Candidat)</button>
+                <button onClick={() => { handleLogin('employer'); setIsMenuOpen(false); }} className="w-full py-3.5 text-center font-bold text-slate-700 bg-slate-100 rounded-xl">Je recrute (Employeur)</button>
                 <button onClick={() => { handleLogin('admin'); setIsMenuOpen(false); }} className="w-full py-3 text-center text-xs font-bold text-rose-500 bg-rose-50 border border-rose-100 rounded-xl">Accès Admin</button>
               </div>
             )}
@@ -753,6 +762,78 @@ export default function App() {
       </main>
 
       <AnimatePresence>
+        {showGeneralLoginModal && (
+          <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-xs z-[200] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-[32px] w-full max-w-md p-6 relative overflow-hidden shadow-2xl border border-slate-100 flex flex-col font-sans text-center"
+            >
+              <button 
+                onClick={() => setShowGeneralLoginModal(false)}
+                className="absolute top-4 right-4 bg-slate-150 hover:bg-slate-200 text-slate-500 rounded-full p-2 hover:scale-105 transition-all cursor-pointer text-xs"
+              >
+                ✕
+              </button>
+
+              <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/15 text-emerald-600 flex items-center justify-center text-3xl mx-auto mb-4 font-bold">
+                🔑
+              </div>
+
+              <h3 className="text-xl font-black text-slate-900 tracking-tight">
+                Se connecter à IvoireSource
+              </h3>
+              
+              <p className="text-xs text-slate-500 mt-2 max-w-sm mx-auto leading-relaxed">
+                Connectez-vous en un clic pour gérer vos candidatures ou vos offres de recrutement.
+              </p>
+
+              <div className="mt-8 space-y-4 text-left">
+                <button
+                  onClick={() => {
+                    setShowGeneralLoginModal(false);
+                    handleLogin('employer');
+                  }}
+                  className="w-full flex items-center justify-between p-4 bg-slate-50 hover:bg-emerald-50/60 border border-slate-100 hover:border-emerald-250 rounded-2xl transition-all cursor-pointer group shadow-xs"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl bg-white w-10 h-10 rounded-xl shadow-xs border border-slate-100 flex items-center justify-center">💼</span>
+                    <div>
+                      <p className="font-extrabold text-slate-800 text-xs uppercase tracking-wider group-hover:text-emerald-700">Recruteur / Employeur</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">Pour recruter et publier des offres</p>
+                    </div>
+                  </div>
+                  <ArrowRight className="h-4 w-4 text-slate-300 group-hover:text-emerald-500 transition-colors transform group-hover:translate-x-1" />
+                </button>
+
+                <button
+                  onClick={() => {
+                    setShowGeneralLoginModal(false);
+                    handleLogin('candidate');
+                  }}
+                  className="w-full flex items-center justify-between p-4 bg-slate-50 hover:bg-emerald-50/60 border border-slate-100 hover:border-emerald-250 rounded-2xl transition-all cursor-pointer group shadow-xs"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl bg-white w-10 h-10 rounded-xl shadow-xs border border-slate-100 flex items-center justify-center">👶</span>
+                    <div>
+                      <p className="font-extrabold text-slate-800 text-xs uppercase tracking-wider group-hover:text-emerald-700">Candidat de Maison</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">Pour chercher un job et postuler</p>
+                    </div>
+                  </div>
+                  <ArrowRight className="h-4 w-4 text-slate-300 group-hover:text-emerald-500 transition-colors transform group-hover:translate-x-1" />
+                </button>
+              </div>
+
+              <div className="mt-6 pt-4 border-t border-slate-100 text-center">
+                <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                  Authentification sécurisée
+                </p>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
         {applyingJob && (
           <ApplicationFormModal 
             job={applyingJob}
