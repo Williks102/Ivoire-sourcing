@@ -90,6 +90,17 @@ export function DashboardView({
   const [selectedCandidate, setSelectedCandidate] = useState<UserProfile | null>(null);
   const [selectedApplication, setSelectedApplication] = useState<Application | null>(null);
   const [unlockedCandidateIds, setUnlockedCandidateIds] = useState<string[]>([]);
+
+  // Job Management States
+  const [selectedManageJob, setSelectedManageJob] = useState<JobPost | null>(null);
+  const [isEditingJob, setIsEditingJob] = useState(false);
+  const [editJobForm, setEditJobForm] = useState({
+    title: '',
+    category: 'nounou' as any,
+    location: '',
+    salaryRange: '',
+    description: '',
+  });
   const [checkoutStep, setCheckoutStep] = useState<'details' | 'plans' | 'payment-method' | 'processing' | 'success'>('details');
   const [chosenPlan, setChosenPlan] = useState<'one-time' | 'monthly'>('one-time');
   const [paymentOperator, setPaymentOperator] = useState<'wave' | 'orange' | 'mtn'>('wave');
@@ -679,6 +690,57 @@ export function DashboardView({
       alert("Offre d'emploi créée avec succès !");
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, 'jobs');
+    }
+  };
+
+  const handleOpenManageJob = (job: JobPost) => {
+    setSelectedManageJob(job);
+    setIsEditingJob(false);
+    setEditJobForm({
+      title: job.title || '',
+      category: job.category || 'nounou',
+      location: job.location || '',
+      salaryRange: job.salaryRange || '',
+      description: job.description || '',
+    });
+  };
+
+  const handleUpdateJob = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedManageJob || !user) return;
+    try {
+      const isDemoMode = !isFirebaseAvailableByConfig || (user?.uid?.startsWith('demo-') ?? true);
+      const updatedJob: JobPost = {
+        ...selectedManageJob,
+        title: editJobForm.title,
+        category: editJobForm.category as any,
+        location: editJobForm.location,
+        salaryRange: editJobForm.salaryRange,
+        description: editJobForm.description,
+      };
+
+      if (isDemoMode) {
+        const localJobs = JSON.parse(localStorage.getItem('offline_jobs') || '[]');
+        const idx = localJobs.findIndex((j: any) => j.id === selectedManageJob.id);
+        if (idx !== -1) {
+          localJobs[idx] = updatedJob;
+          localStorage.setItem('offline_jobs', JSON.stringify(localJobs));
+        }
+        setMyJobs(prev => prev.map(j => j.id === selectedManageJob.id ? updatedJob : j));
+        setSelectedManageJob(null);
+        setIsEditingJob(false);
+        showNotification("L'annonce d'emploi (Démo) a été modifiée avec succès !", "success");
+        return;
+      }
+
+      await setDoc(doc(db, 'jobs', selectedManageJob.id), updatedJob);
+      setMyJobs(prev => prev.map(j => j.id === selectedManageJob.id ? updatedJob : j));
+      setSelectedManageJob(null);
+      setIsEditingJob(false);
+      showNotification("L'annonce d'emploi a été modifiée avec succès !", "success");
+    } catch (err) {
+      showNotification("Erreur lors de la modification de l'annonce d'emploi.", "error");
+      handleFirestoreError(err, OperationType.UPDATE, `jobs/${selectedManageJob.id}`);
     }
   };
 
@@ -1321,13 +1383,22 @@ export function DashboardView({
                  ) : (
                    <div className="space-y-3">
                      {myJobs.map(job => (
-                       <div key={job.id} className="p-4 border border-slate-100 rounded-2xl flex items-center justify-between hover:border-emerald-200 transition-all">
+                       <div 
+                         key={job.id} 
+                         onClick={() => handleOpenManageJob(job)}
+                         className="p-4 bg-white border border-slate-100 rounded-2xl flex items-center justify-between hover:border-emerald-200 hover:shadow-sm cursor-pointer transition-all"
+                       >
                          <div>
                             <p className="font-bold text-slate-800">{job.title}</p>
                             <p className="text-xs text-slate-400">{job.location} • {job.status === 'approved' ? 'Active' : 'En attente'}</p>
                          </div>
                          <div className="flex items-center gap-2">
-                            <button className="text-xs font-bold text-slate-400">Gérer</button>
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); handleOpenManageJob(job); }}
+                              className="text-xs font-bold text-emerald-600 hover:text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-xl transition-all uppercase tracking-wider h-8 flex items-center cursor-pointer font-sans"
+                            >
+                              Gérer
+                            </button>
                             <ChevronRight className="h-4 w-4 text-slate-200" />
                          </div>
                        </div>
@@ -3212,6 +3283,166 @@ export function DashboardView({
                        <span className="text-5xl block mb-4">⚠️</span>
                        <p className="text-sm font-bold text-slate-700">Contenu indisponible</p>
                        <p className="text-xs text-slate-400 mt-1">Le format de ce fichier ne permet pas un aperçu direct. Veuillez le télécharger.</p>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            </div>
+          )}
+
+          {selectedManageJob && (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[130] flex items-center justify-center p-4 overflow-y-auto">
+              <motion.div 
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                className="bg-white rounded-[32px] w-full max-w-lg overflow-hidden shadow-2xl border border-slate-100 flex flex-col font-sans"
+              >
+                {/* Modal Header */}
+                <div className="px-6 py-5 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center border border-emerald-100 text-lg">
+                      📋
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-black text-slate-800 uppercase tracking-tight">
+                        {isEditingJob ? "Modifier l'offre" : "Options de l'offre"}
+                      </h4>
+                      <p className="text-[10px] font-bold text-emerald-600 mt-0.5 tracking-wide">
+                        {isEditingJob ? "Modification détaillée" : "Gestion de l'annonce"}
+                      </p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => { setSelectedManageJob(null); setIsEditingJob(false); }}
+                    className="w-10 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 transition-colors cursor-pointer"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+
+                {/* Modal Body */}
+                <div className="p-6 overflow-y-auto max-h-[70vh]">
+                  {isEditingJob ? (
+                    <form onSubmit={handleUpdateJob} className="space-y-4 text-left">
+                      <div>
+                        <label className="text-[10px] uppercase font-semibold text-slate-400 block mb-1">Intitulé du poste</label>
+                        <input 
+                          required 
+                          className="w-full bg-slate-50 px-4 py-3 rounded-xl border-none focus:ring-1 focus:ring-emerald-500 outline-none h-12 font-semibold text-slate-800" 
+                          value={editJobForm.title} 
+                          onChange={e => setEditJobForm({...editJobForm, title: e.target.value})} 
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="text-[10px] uppercase font-semibold text-slate-400 block mb-1">Catégorie</label>
+                          <select 
+                            className="w-full bg-slate-50 px-4 py-3 rounded-xl border-none focus:ring-1 focus:ring-emerald-500 outline-none h-12 font-semibold text-slate-800 text-sm"
+                            value={editJobForm.category}
+                            onChange={e => setEditJobForm({...editJobForm, category: e.target.value as any})}
+                          >
+                            {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-[10px] uppercase font-semibold text-slate-400 block mb-1">Ville</label>
+                          <select 
+                            className="w-full bg-slate-50 px-4 py-3 rounded-xl border-none focus:ring-1 focus:ring-emerald-500 outline-none h-12 font-semibold text-slate-800 text-sm"
+                            value={editJobForm.location}
+                            onChange={e => setEditJobForm({...editJobForm, location: e.target.value})}
+                          >
+                            {CITIES.map(c => <option key={c} value={c}>{c}</option>)}
+                          </select>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] uppercase font-semibold text-slate-400 block mb-1">Rémunération mensuelle (FCFA)</label>
+                        <input 
+                          required 
+                          className="w-full bg-slate-50 px-4 py-3 rounded-xl border-none focus:ring-1 focus:ring-emerald-500 outline-none h-12 font-semibold text-slate-800" 
+                          value={editJobForm.salaryRange} 
+                          onChange={e => setEditJobForm({...editJobForm, salaryRange: e.target.value})} 
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] uppercase font-semibold text-slate-400 block mb-1">Description & Profil</label>
+                        <textarea 
+                          required 
+                          rows={4} 
+                          className="w-full bg-slate-50 px-4 py-3 rounded-xl border-none focus:ring-1 focus:ring-emerald-500 outline-none font-medium text-slate-700 text-sm" 
+                          value={editJobForm.description} 
+                          onChange={e => setEditJobForm({...editJobForm, description: e.target.value})} 
+                        />
+                      </div>
+
+                      <div className="flex gap-3 justify-end pt-5 border-t border-slate-100">
+                        <button 
+                          type="button" 
+                          onClick={() => setIsEditingJob(false)}
+                          className="px-5 py-3 rounded-xl text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-all font-sans cursor-pointer"
+                        >
+                          Retour
+                        </button>
+                        <button 
+                          type="submit" 
+                          className="px-5 py-3 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white transition-all font-sans cursor-pointer"
+                        >
+                          Enregistrer
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    <div className="space-y-4 text-left">
+                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100/40">
+                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Intitulé du poste</p>
+                        <p className="text-sm font-bold text-slate-800">{selectedManageJob.title}</p>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100/40">
+                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Ville</p>
+                          <p className="text-xs font-semibold text-slate-700">{selectedManageJob.location}</p>
+                        </div>
+                        <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100/40">
+                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Rémunération</p>
+                          <p className="text-xs font-semibold text-slate-700">{selectedManageJob.salaryRange} FCFA</p>
+                        </div>
+                      </div>
+
+                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100/40">
+                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">État de l'annonce</p>
+                        <p className={`text-xs font-bold ${selectedManageJob.status === 'approved' ? 'text-emerald-600' : 'text-amber-500'}`}>
+                          {selectedManageJob.status === 'approved' ? 'Active / Validée' : 'En attente de validation'}
+                        </p>
+                      </div>
+
+                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100/40">
+                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Description de la mission</p>
+                        <p className="text-xs text-slate-600 whitespace-pre-line leading-relaxed font-sans">{selectedManageJob.description}</p>
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row gap-3 pt-6 border-t border-slate-100">
+                        <button 
+                          onClick={() => setIsEditingJob(true)}
+                          className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer text-center"
+                        >
+                          Modifier l'offre
+                        </button>
+                        <button 
+                          onClick={() => {
+                            const id = selectedManageJob.id;
+                            setSelectedManageJob(null);
+                            deleteJobAction(id);
+                          }}
+                          className="flex-1 bg-red-50 hover:bg-red-105 text-red-650 py-3 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer text-center"
+                        >
+                          Supprimer l'offre
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
