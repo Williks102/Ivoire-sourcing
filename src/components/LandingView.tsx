@@ -179,6 +179,11 @@ export function LandingView({
   const [paymentError, setPaymentError] = useState<string>('');
   const [paymentStatusMessage, setPaymentStatusMessage] = useState<string>('');
 
+  // Secure Admin Verification States
+  const [showAdminPinModal, setShowAdminPinModal] = useState<boolean>(false);
+  const [adminPinValue, setAdminPinValue] = useState<string>('');
+  const [adminPinError, setAdminPinError] = useState<string>('');
+
   // Use only the real/fetched jobs list, with no flat static mock fallback
   const displayedJobs = jobs && jobs.length > 0 ? jobs.slice(0, 4) : [];
 
@@ -373,7 +378,11 @@ export function LandingView({
                   ⚡ Recruteur de Test
                 </button>
                 <button 
-                  onClick={() => onDemoLogin?.('admin')} 
+                  onClick={() => {
+                    setAdminPinValue('');
+                    setAdminPinError('');
+                    setShowAdminPinModal(true);
+                  }} 
                   className="text-rose-400 hover:text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer"
                 >
                   ⚡ Admin de Test
@@ -1101,6 +1110,79 @@ export function LandingView({
                 )}
 
               </div>
+            </motion.div>
+          </div>
+        )}
+
+        {showAdminPinModal && (
+          <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md z-[150] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-slate-900 border border-slate-800 rounded-[32px] w-full max-w-sm p-6 overflow-hidden shadow-2xl flex flex-col font-sans text-center relative"
+            >
+              <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-450 flex items-center justify-center text-xl mx-auto mb-4">
+                🔒
+              </div>
+              <h4 className="text-sm font-black text-rose-400 uppercase tracking-widest">
+                Accès Admin Sécurisé
+              </h4>
+              <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+                Veuillez saisir le code confidentiel d'administration pour valider votre identité :
+              </p>
+
+              <form 
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (adminPinValue === '2026') {
+                    setShowAdminPinModal(false);
+                    onDemoLogin?.('admin');
+                  } else {
+                    setAdminPinError("Code confidentiel incorrect. Accès refusé.");
+                  }
+                }}
+                className="mt-6 space-y-4 text-left"
+              >
+                <div>
+                  <input
+                    type="password"
+                    required
+                    placeholder="••••••••"
+                    value={adminPinValue}
+                    onChange={(e) => {
+                      setAdminPinValue(e.target.value);
+                      setAdminPinError('');
+                    }}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-center text-lg tracking-widest font-black text-slate-200 outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 transition-all h-12"
+                  />
+                  {adminPinError && (
+                    <p className="text-[10px] text-red-500 font-bold mt-2 text-center uppercase tracking-wider">
+                      ⚠️ {adminPinError}
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAdminPinModal(false);
+                      setAdminPinValue('');
+                      setAdminPinError('');
+                    }}
+                    className="flex-1 py-3 text-xs font-bold uppercase tracking-wider bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl transition-all cursor-pointer text-center"
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 py-3 text-xs font-bold uppercase tracking-wider bg-rose-600 hover:bg-rose-500 text-white rounded-xl transition-all shadow-lg shadow-rose-950/20 cursor-pointer text-center"
+                  >
+                    Déverrouiller
+                  </button>
+                </div>
+              </form>
             </motion.div>
           </div>
         )}

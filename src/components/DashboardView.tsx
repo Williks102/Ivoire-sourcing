@@ -784,18 +784,6 @@ export function DashboardView({
     }
   };
 
-  const promoteToAdmin = async () => {
-    if (!user || !profile) return;
-    try {
-      const updated = { ...profile, role: 'admin' as UserRole };
-      await setDoc(doc(db, 'users', user.uid), updated);
-      onProfileUpdate(updated);
-      alert("Vous êtes maintenant administrateur.");
-    } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `users/${user.uid}`);
-    }
-  };
-
   useEffect(() => {
     if (!user) return;
     const checkProfile = async () => {
@@ -1169,9 +1157,9 @@ export function DashboardView({
                    <PlusCircle className="h-4 w-4" /> Nouvelle offre
                 </button>
               )}
-              {user?.email === 'koffiw4@gmail.com' && profile.role !== 'admin' && (
-               <button onClick={promoteToAdmin} className="flex items-center gap-2 text-[10px] bg-amber-500 text-slate-950 px-3 py-2 rounded-xl font-bold hover:bg-amber-400 transition-all uppercase tracking-widest shadow-md">
-                  <Star className="h-3 w-3 fill-slate-950" /> Devenir Admin
+              {false && (
+               <button onClick={() => {}} className="flex items-center gap-2 text-[10px] bg-amber-500 text-slate-950 px-3 py-2 rounded-xl font-bold hover:bg-amber-400 transition-all uppercase tracking-widest shadow-md">
+                  {/* Bouton de promotion supprimé par mesure de sécurité */}
                </button>
               )}
            </div>

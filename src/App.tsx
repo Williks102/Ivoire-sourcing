@@ -215,6 +215,9 @@ export default function App() {
             setIsOffline(true);
           }
           if (profileData) {
+            if (u.email === 'koffiw4@gmail.com') {
+              profileData.role = 'admin';
+            }
             setProfile(profileData);
           }
         } else {
@@ -403,9 +406,10 @@ export default function App() {
       const docSnap = await getDoc(docRef);
       
       if (!docSnap.exists()) {
+        const assignedRole = (role === 'admin' && u.email !== 'koffiw4@gmail.com') ? 'candidate' : role;
         const newProfile: UserProfile = {
           uid: u.uid,
-          role,
+          role: assignedRole,
           displayName: u.displayName || 'Utilisateur',
           email: u.email || '',
           photoURL: u.photoURL || '',
@@ -420,8 +424,13 @@ export default function App() {
         setProfile(newProfile);
       } else {
         const existingProfile = docSnap.data() as UserProfile;
-        if (existingProfile.role !== role) {
-          const updatedProfile = { ...existingProfile, role: role };
+        const assignedRole = (role === 'admin' && u.email !== 'koffiw4@gmail.com') ? existingProfile.role : role;
+        if (role === 'admin' && u.email !== 'koffiw4@gmail.com') {
+          addToast("Sécurité : Rôle Administrateur non autorisé pour cette adresse de messagerie.", "error");
+          return;
+        }
+        if (existingProfile.role !== assignedRole) {
+          const updatedProfile = { ...existingProfile, role: assignedRole };
           await setDoc(docRef, updatedProfile);
           setProfile(updatedProfile);
         } else {
