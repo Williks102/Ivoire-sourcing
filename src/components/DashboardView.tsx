@@ -129,6 +129,20 @@ export function DashboardView({
   const [updatingProfile, setUpdatingProfile] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
 
+  const getJobStatusLabel = (status: string) => {
+    switch (status) {
+      case 'approved':
+        return { text: 'Approuvée', color: 'bg-emerald-50 text-emerald-600 border border-emerald-100/30' };
+      case 'rejected':
+        return { text: 'Rejetée / En suspens', color: 'bg-red-50 text-red-650 border border-red-100/30' };
+      case 'closed':
+        return { text: 'Clôturée', color: 'bg-slate-100 text-slate-500 border border-slate-200/30' };
+      case 'pending':
+      default:
+        return { text: 'En attente de validation', color: 'bg-amber-50 text-amber-600 border border-amber-100/30' };
+    }
+  };
+
   // Admin Sub-Tab State ('users' | 'jobs' | 'applications')
   const [adminTab, setAdminTab] = useState<'users' | 'jobs' | 'applications'>('users');
 
@@ -552,9 +566,23 @@ export function DashboardView({
 
   // ADMIN CONTROLS: Moderate Job Post (Approve/Reject)
   const updateJobStatus = async (jobId: string, newStatus: 'approved' | 'rejected' | 'closed') => {
+    const isDemoMode = !isFirebaseAvailableByConfig || (user?.uid?.startsWith('demo-') ?? true);
     try {
+      if (isDemoMode) {
+        const localJobs = JSON.parse(localStorage.getItem('offline_jobs') || '[]');
+        const idx = localJobs.findIndex((j: any) => j.id === jobId);
+        if (idx !== -1) {
+          localJobs[idx].status = newStatus;
+          localStorage.setItem('offline_jobs', JSON.stringify(localJobs));
+        }
+        setMyJobs(prev => prev.map(j => j.id === jobId ? { ...j, status: newStatus } : j));
+        showNotification(`Le statut de l'offre a été mis à jour vers "${newStatus === 'approved' ? 'Approuvée' : 'Rejetée'}" (Démo)`, "success");
+        return;
+      }
+
       await setDoc(doc(db, 'jobs', jobId), { status: newStatus }, { merge: true });
       setMyJobs(prev => prev.map(j => j.id === jobId ? { ...j, status: newStatus } : j));
+      showNotification(`Le statut de l'offre d'emploi a été mis à jour avec succès !`, "success");
       if (newStatus === 'approved' && typeof (window as any).triggerSocketAction === 'function') {
         (window as any).triggerSocketAction('job_moderation_approved', { title: 'Annonce Modérée' });
       } else if (newStatus === 'rejected' && typeof (window as any).triggerSocketAction === 'function') {
@@ -580,10 +608,22 @@ export function DashboardView({
       title: "Supprimer l'offre",
       message: "Êtes-vous sûr de vouloir supprimer cette annonce définitivement ?",
       onConfirm: async () => {
+        const isDemoMode = !isFirebaseAvailableByConfig || (user?.uid?.startsWith('demo-') ?? true);
         try {
+          if (isDemoMode) {
+            const localJobs = JSON.parse(localStorage.getItem('offline_jobs') || '[]');
+            const updatedJobs = localJobs.filter((j: any) => j.id !== jobId);
+            localStorage.setItem('offline_jobs', JSON.stringify(updatedJobs));
+            setMyJobs(prev => prev.filter(j => j.id !== jobId));
+            showNotification("L'annonce d'emploi a été supprimée avec succès (Démo) !", "success");
+            setConfirmation(null);
+            return;
+          }
+
           await deleteDoc(doc(db, 'jobs', jobId));
           setMyJobs(prev => prev.filter(j => j.id !== jobId));
           showNotification("L'offre d'emploi a été supprimée avec succès.", "success");
+          setConfirmation(null);
         } catch (err) {
           showNotification("Attribution insuffisante ou erreur lors de la suppression de l'offre.", "error");
           handleFirestoreError(err, OperationType.DELETE, `jobs/${jobId}`);
@@ -1390,7 +1430,13 @@ export function DashboardView({
                        >
                          <div>
                             <p className="font-bold text-slate-800">{job.title}</p>
-                            <p className="text-xs text-slate-400">{job.location} • {job.status === 'approved' ? 'Active' : 'En attente'}</p>
+                            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                               <span className="text-xs text-slate-400 font-medium">{job.location}</span>
+                               <span className="text-xs text-slate-300">•</span>
+                               <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${getJobStatusLabel(job.status).color}`}>
+                                  {getJobStatusLabel(job.status).text}
+                               </span>
+                            </div>
                          </div>
                          <div className="flex items-center gap-2">
                             <button 
@@ -1998,8 +2044,8 @@ export function DashboardView({
                                            </td>
                                            <td className="px-6 py-4 text-xs font-bold text-emerald-600">{job.salaryRange} FCFA</td>
                                            <td className="px-6 py-4">
-                                              <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider ${job.status === 'approved' ? 'bg-emerald-50 text-emerald-600' : job.status === 'rejected' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'}`}>
-                                                 {job.status}
+                                              <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider ${getJobStatusLabel(job.status).color}`}>
+                                                 {getJobStatusLabel(job.status).text}
                                               </span>
                                            </td>
                                            <td className="px-6 py-4 text-right flex items-center justify-end gap-2">
@@ -3415,9 +3461,9 @@ export function DashboardView({
 
                       <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100/40">
                         <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">État de l'annonce</p>
-                        <p className={`text-xs font-bold ${selectedManageJob.status === 'approved' ? 'text-emerald-600' : 'text-amber-500'}`}>
-                          {selectedManageJob.status === 'approved' ? 'Active / Validée' : 'En attente de validation'}
-                        </p>
+                        <span className={`inline-block px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider ${getJobStatusLabel(selectedManageJob.status).color}`}>
+                          {getJobStatusLabel(selectedManageJob.status).text}
+                        </span>
                       </div>
 
                       <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100/40">
