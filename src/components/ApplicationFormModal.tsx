@@ -33,6 +33,16 @@ interface ApplicationFormModalProps {
 export function ApplicationFormModal({ job, profile, onClose, onSubmit }: ApplicationFormModalProps) {
   if (!job) return null;
 
+  const [isMobile, setIsMobile] = useState(false);
+  React.useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 640);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
   const [name, setName] = useState(profile?.displayName || '');
   const [phone, setPhone] = useState(profile?.phone || '');
   const [experience, setExperience] = useState<number>(1);
@@ -112,19 +122,33 @@ export function ApplicationFormModal({ job, profile, onClose, onSubmit }: Applic
     });
   };
 
+  const modalAnimation = isMobile ? {
+    initial: { y: "100%" },
+    animate: { y: 0 },
+    exit: { y: "100%" },
+    transition: { type: "spring", damping: 25, stiffness: 220 }
+  } : {
+    initial: { scale: 0.95, y: 20 },
+    animate: { scale: 1, y: 0 },
+    exit: { scale: 0.95, y: 20 }
+  };
+
   return (
     <motion.div 
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 bg-slate-900/40 backdrop-blur-md z-[190] flex items-center justify-center p-4 overflow-y-auto"
+      className="fixed inset-0 bg-slate-900/40 backdrop-blur-md z-[190] flex items-end sm:items-center justify-center sm:p-4 overflow-y-auto"
     >
       <motion.div 
-        initial={{ scale: 0.95, y: 20 }}
-        animate={{ scale: 1, y: 0 }}
-        exit={{ scale: 0.95, y: 20 }}
-        className="bg-white max-w-xl w-full rounded-[32px] overflow-hidden shadow-2xl border border-slate-100 flex flex-col relative font-sans max-h-[90vh] my-4"
+        {...modalAnimation}
+        className="bg-white max-w-xl w-full rounded-t-[32px] sm:rounded-[32px] overflow-hidden shadow-2xl border border-slate-100 flex flex-col relative font-sans max-h-[85vh] sm:max-h-[90vh] my-0 sm:my-4"
       >
+        {isMobile && (
+          <div className="pt-3 pb-1 shrink-0 flex justify-center bg-slate-50/70 border-b border-slate-100">
+            <div className="w-12 h-1.5 bg-slate-200 rounded-full" />
+          </div>
+        )}
         {/* Header */}
         <div className="p-6 md:p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/70 shrink-0">
           <div className="flex items-center gap-3">

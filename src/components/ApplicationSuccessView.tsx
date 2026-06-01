@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { CheckCircle2, MapPin, CreditCard, Calendar, ArrowRight, ShieldCheck, Sparkles } from 'lucide-react';
 import { JobPost } from '../types';
@@ -12,19 +12,43 @@ interface ApplicationSuccessViewProps {
 export function ApplicationSuccessView({ job, onClose, onGoToDashboard }: ApplicationSuccessViewProps) {
   if (!job) return null;
 
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 640);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  const modalAnimation = isMobile ? {
+    initial: { y: "100%" },
+    animate: { y: 0 },
+    exit: { y: "100%" },
+    transition: { type: "spring", damping: 25, stiffness: 220 }
+  } : {
+    initial: { scale: 0.95, y: 20 },
+    animate: { scale: 1, y: 0 },
+    exit: { scale: 0.95, y: 20 }
+  };
+
   return (
     <motion.div 
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 bg-slate-900/40 backdrop-blur-md z-[200] flex items-center justify-center p-4 overflow-y-auto"
+      className="fixed inset-0 bg-slate-900/40 backdrop-blur-md z-[200] flex items-end sm:items-center justify-center sm:p-4 overflow-y-auto"
     >
       <motion.div 
-        initial={{ scale: 0.95, y: 20 }}
-        animate={{ scale: 1, y: 0 }}
-        exit={{ scale: 0.95, y: 20 }}
-        className="bg-white max-w-lg w-full rounded-[32px] overflow-hidden shadow-2xl border border-slate-100 p-8 md:p-10 relative font-sans my-8"
+        {...modalAnimation}
+        className="bg-white max-w-lg w-full rounded-t-[32px] sm:rounded-[32px] overflow-hidden shadow-2xl border border-slate-100 p-6 sm:p-8 md:p-10 relative font-sans my-0 sm:my-8 max-h-[85vh] sm:max-h-[90vh] overflow-y-auto"
       >
+        {isMobile && (
+          <div className="pt-1 pb-4 shrink-0 flex justify-center">
+            <div className="w-12 h-1.5 bg-slate-200 rounded-full" />
+          </div>
+        )}
         {/* Decorative corner sparkles */}
         <div className="absolute top-6 right-6 text-emerald-500 animate-pulse">
           <Sparkles className="h-6 w-6" />

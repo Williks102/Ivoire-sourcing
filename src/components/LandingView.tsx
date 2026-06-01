@@ -180,6 +180,16 @@ export function LandingView({
   const [paymentStatusMessage, setPaymentStatusMessage] = useState<string>('');
 
   // Secure Admin Verification States
+  const [isMobile, setIsMobile] = useState<boolean>(false);
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 640);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
   const [showAdminPinModal, setShowAdminPinModal] = useState<boolean>(false);
   const [adminPinValue, setAdminPinValue] = useState<string>('');
   const [adminPinError, setAdminPinError] = useState<string>('');
@@ -361,34 +371,7 @@ export function LandingView({
               </button>
             </div>
 
-            {/* Optional AI Studio Sandbox Testing Prompt */}
-            <div className="text-center lg:text-left pt-3">
-              <span className="text-slate-500 text-[10px] font-black uppercase tracking-widest block">Accès rapide Sandbox (Bypass Google)</span>
-              <div className="flex flex-wrap gap-2 justify-center lg:justify-start mt-2">
-                <button 
-                  onClick={() => onDemoLogin?.('candidate')} 
-                  className="text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer"
-                >
-                  ⚡ Candidat de Test
-                </button>
-                <button 
-                  onClick={() => onDemoLogin?.('employer')} 
-                  className="text-cyan-400 hover:text-cyan-300 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer"
-                >
-                  ⚡ Recruteur de Test
-                </button>
-                <button 
-                  onClick={() => {
-                    setAdminPinValue('');
-                    setAdminPinError('');
-                    setShowAdminPinModal(true);
-                  }} 
-                  className="text-rose-400 hover:text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer"
-                >
-                  ⚡ Admin de Test
-                </button>
-              </div>
-            </div>
+
 
             {/* Microstats banner */}
             <div className="grid grid-cols-3 gap-4 pt-6 max-w-md mx-auto lg:mx-0 border-t border-slate-850">
@@ -875,13 +858,19 @@ export function LandingView({
       {/* STEP 3 DETAILED POPUP: PAYMENT CHECKOUT PROMPT & SIMULATION */}
       <AnimatePresence>
         {selectedProfile && (
-          <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[150] flex items-end sm:items-center justify-center sm:p-4">
             <motion.div 
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl border border-slate-100 text-slate-800"
+              initial={isMobile ? { y: "100%" } : { scale: 0.95, opacity: 0 }}
+              animate={isMobile ? { y: 0 } : { scale: 1, opacity: 1 }}
+              exit={isMobile ? { y: "100%" } : { scale: 0.95, opacity: 0 }}
+              transition={isMobile ? { type: "spring", damping: 25, stiffness: 220 } : undefined}
+              className="bg-white rounded-t-[32px] sm:rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl border border-slate-100 text-slate-800 max-h-[85vh] sm:max-h-[90vh] overflow-y-auto"
             >
+              {isMobile && (
+                <div className="pt-2 pb-1 shrink-0 flex justify-center bg-slate-800 border-b border-slate-900">
+                  <div className="w-12 h-1.5 bg-slate-650 rounded-full" />
+                </div>
+              )}
               {/* Modal header with candidate highlight */}
               <div className="relative bg-gradient-to-r from-emerald-600 to-slate-900 text-white p-6 pb-8 text-left">
                 <button 
@@ -1115,13 +1104,19 @@ export function LandingView({
         )}
 
         {showAdminPinModal && (
-          <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md z-[150] flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md z-[150] flex items-end sm:items-center justify-center sm:p-4">
             <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-slate-900 border border-slate-800 rounded-[32px] w-full max-w-sm p-6 overflow-hidden shadow-2xl flex flex-col font-sans text-center relative"
+              initial={isMobile ? { y: "100%" } : { scale: 0.95, opacity: 0 }}
+              animate={isMobile ? { y: 0 } : { scale: 1, opacity: 1 }}
+              exit={isMobile ? { y: "100%" } : { scale: 0.95, opacity: 0 }}
+              transition={isMobile ? { type: "spring", damping: 25, stiffness: 220 } : undefined}
+              className="bg-slate-900 border border-slate-800 rounded-t-[32px] sm:rounded-[32px] w-full max-w-sm p-6 overflow-hidden shadow-2xl flex flex-col font-sans text-center relative max-h-[85vh] overflow-y-auto"
             >
+              {isMobile && (
+                <div className="pt-1 pb-3 flex justify-center shrink-0">
+                  <div className="w-12 h-1.5 bg-slate-800 rounded-full" />
+                </div>
+              )}
               <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-450 flex items-center justify-center text-xl mx-auto mb-4">
                 🔒
               </div>

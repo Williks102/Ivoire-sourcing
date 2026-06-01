@@ -82,6 +82,16 @@ export function DashboardView({
   onProfileUpdate,
   setView
 }: DashboardViewProps) {
+  const [isMobile, setIsMobile] = useState<boolean>(false);
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 640);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
   const [myJobs, setMyJobs] = useState<JobPost[]>([]);
   const [apps, setApps] = useState<Application[]>([]);
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
@@ -2764,13 +2774,19 @@ export function DashboardView({
       {/* GLOBAL MODALS */}
       <AnimatePresence>
          {selectedCandidate && (
-           <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
+           <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[110] flex items-end sm:items-center justify-center sm:p-4">
               <motion.div 
-                initial={{ scale: 0.95, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.95, opacity: 0 }}
-                className="bg-white rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl border border-slate-100/40 text-slate-800 animate-fade-in"
+                initial={isMobile ? { y: "100%" } : { scale: 0.95, opacity: 0 }}
+                animate={isMobile ? { y: 0 } : { scale: 1, opacity: 1 }}
+                exit={isMobile ? { y: "100%" } : { scale: 0.95, opacity: 0 }}
+                transition={isMobile ? { type: "spring", damping: 25, stiffness: 220 } : undefined}
+                className="bg-white rounded-t-[32px] sm:rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl border border-slate-100/40 text-slate-800 max-h-[85vh] sm:max-h-[90vh] overflow-y-auto"
               >
+                 {isMobile && (
+                   <div className="pt-2 pb-1 shrink-0 flex justify-center bg-slate-900 border-b border-slate-850">
+                     <div className="w-12 h-1.5 bg-slate-700 rounded-full" />
+                   </div>
+                 )}
                  {/* Modal header with candidate highlight */}
                  <div className="relative bg-gradient-to-r from-emerald-600 to-slate-900 text-white p-6 pb-8 text-left">
                     <button 

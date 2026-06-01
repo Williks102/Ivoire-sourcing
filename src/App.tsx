@@ -48,6 +48,17 @@ export default function App() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [isOffline, setIsOffline] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 640);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
   const [view, setView] = useState<'landing' | 'jobs' | 'dashboard' | 'post-job'>('landing');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('');
@@ -1105,16 +1116,22 @@ export default function App() {
 
       <AnimatePresence>
         {showGeneralLoginModal && (
-          <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-xs z-[200] flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-xs z-[200] flex items-end sm:items-center justify-center sm:p-4">
             <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-[32px] w-full max-w-md p-6 relative overflow-hidden shadow-2xl border border-slate-100 flex flex-col font-sans"
+              initial={isMobile ? { y: "100%" } : { scale: 0.95, opacity: 0 }}
+              animate={isMobile ? { y: 0 } : { scale: 1, opacity: 1 }}
+              exit={isMobile ? { y: "100%" } : { scale: 0.95, opacity: 0 }}
+              transition={isMobile ? { type: "spring", damping: 25, stiffness: 220 } : undefined}
+              className="bg-white rounded-t-[32px] sm:rounded-[32px] w-full max-w-md p-6 relative overflow-hidden shadow-2xl border border-slate-100 flex flex-col font-sans max-h-[90vh] overflow-y-auto"
             >
+              {isMobile && (
+                <div className="pt-1 pb-3 flex justify-center shrink-0">
+                  <div className="w-12 h-1.5 bg-slate-200 rounded-full" />
+                </div>
+              )}
               <button 
                 onClick={() => setShowGeneralLoginModal(false)}
-                className="absolute top-4 right-4 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-full p-2 hover:scale-105 transition-all cursor-pointer text-xs w-8 h-8 flex items-center justify-center"
+                className="absolute top-4 right-4 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-full p-2 hover:scale-105 transition-all cursor-pointer text-xs w-8 h-8 flex items-center justify-center z-10"
               >
                 ✕
               </button>
