@@ -28,7 +28,7 @@ import {
 } from 'lucide-react';
 import { User, signOut } from 'firebase/auth';
 import { collection, query, limit, getDocs, where, doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
-import { db, auth, isFirebaseAvailableByConfig } from '../lib/firebase';
+import { db, auth, isFirebaseAvailableByConfig as importedIsFirebaseAvailableByConfig, getIsFirebaseAvailable } from '../lib/firebase';
 import { UserProfile, JobPost, Application, UserRole } from '../types';
 import { CITIES, CATEGORIES } from '../constants';
 import { OPERATORS_MAP, loadPaiementProScript } from './LandingView';
@@ -83,6 +83,7 @@ export function DashboardView({
   onProfileUpdate,
   setView
 }: DashboardViewProps) {
+  const isFirebaseAvailableByConfig = getIsFirebaseAvailable();
   const [isMobile, setIsMobile] = useState<boolean>(false);
   useEffect(() => {
     const checkMobile = () => {

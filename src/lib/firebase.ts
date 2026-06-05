@@ -59,6 +59,31 @@ if (isKeyValid) {
     isFirebaseAvailableByConfig = true;
     
     console.log("[FIREBASE] Initialisation réussie uniquement avec les variables d'environnement de production !");
+
+    // Dynamic background check to ensure the key is physically valid with Google's API services
+    if (typeof fetch !== 'undefined') {
+      fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${firebaseConfig.apiKey}`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+        headers: { 'Content-Type': 'application/json' }
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data && data.error && (
+          data.error.message?.includes('API_KEY_INVALID') || 
+          data.error.message?.includes('API key not valid') ||
+          data.error.message?.includes('INVALID_API_KEY') ||
+          data.error.message?.includes('api-key-not-valid')
+        )) {
+          console.warn("[FIREBASE_VERIFIER] Caught physically invalid or unactivated API Key. Gracefully disabling Firebase features...");
+          disableFirebase();
+        }
+      })
+      .catch(err => {
+        console.warn("[FIREBASE_VERIFIER] Failed to check API Key availability:", err);
+      });
+    }
+
   } catch (err) {
     console.error("[FIREBASE] Échec de l'initialisation de l'instance Firebase :", err);
   }
@@ -70,6 +95,10 @@ if (isKeyValid) {
 export function disableFirebase() {
   isFirebaseAvailableByConfig = false;
   console.warn("[FIREBASE] Firebase has been programmatically disabled (switching to local demo mode).");
+}
+
+export function getIsFirebaseAvailable() {
+  return isFirebaseAvailableByConfig;
 }
 
 export { app, db, auth, googleProvider, isFirebaseAvailableByConfig };

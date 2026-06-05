@@ -34,7 +34,7 @@ import {
   Briefcase,
   FileCheck
 } from 'lucide-react';
-import { auth, db, googleProvider, rawConfig, isFirebaseAvailableByConfig, disableFirebase } from './lib/firebase';
+import { auth, db, googleProvider, rawConfig, isFirebaseAvailableByConfig, disableFirebase, getIsFirebaseAvailable } from './lib/firebase';
 import { UserProfile, JobPost, UserRole } from './types';
 import { LandingView } from './components/LandingView';
 import { JobListView, JobDetailView } from './components/JobListView';
@@ -193,7 +193,7 @@ export default function App() {
     }
 
     // Proactive check: if Firebase config is blank/missing (as on Vercel before env setup), we run in quiet offline demo mode rather than crashing
-    if (!isFirebaseAvailableByConfig || !rawConfig || !rawConfig.apiKey || rawConfig.apiKey === '') {
+    if (!getIsFirebaseAvailable() || !rawConfig || !rawConfig.apiKey || rawConfig.apiKey === '') {
       console.warn("[FIREBASE] Unconfigured or missing keys. Running in local simulation mode.");
       setLoading(false);
       clearTimeout(timer);
@@ -287,7 +287,7 @@ export default function App() {
 
   const fetchJobs = async () => {
     try {
-      if (!isFirebaseAvailableByConfig) {
+      if (!getIsFirebaseAvailable()) {
         throw new Error("Local Demo Mode Active");
       }
       let q = query(collection(db, 'jobs'), where('status', '==', 'approved'));
@@ -400,7 +400,7 @@ export default function App() {
     try {
       localStorage.removeItem('demo_user');
       localStorage.removeItem('demo_profile');
-      if (isFirebaseAvailableByConfig) {
+      if (getIsFirebaseAvailable()) {
         await signOut(auth);
       }
     } catch (err) {
@@ -561,7 +561,7 @@ export default function App() {
     const cleanedEmail = email.trim().toLowerCase();
     setAttemptedRole('candidate');
 
-    if (!isFirebaseAvailableByConfig || !rawConfig || !rawConfig.apiKey || rawConfig.apiKey === '') {
+    if (!getIsFirebaseAvailable() || !rawConfig || !rawConfig.apiKey || rawConfig.apiKey === '') {
       handleLocalSimulationConnexion(cleanedEmail, password);
       return;
     }
@@ -654,7 +654,7 @@ export default function App() {
   };
 
   const executeGoogleLogin = async () => {
-    if (!isFirebaseAvailableByConfig || !rawConfig || !rawConfig.apiKey || rawConfig.apiKey === '') {
+    if (!getIsFirebaseAvailable() || !rawConfig || !rawConfig.apiKey || rawConfig.apiKey === '') {
       addToast("💡 Mode démo - SSO Google simulé.", "info");
       handleLocalSimulationConnexion("google-user@gmail.com");
       return;
@@ -704,7 +704,7 @@ export default function App() {
       setView('dashboard');
       addToast(`🚀 Connexion Google réussie !`, 'success');
     } catch (err: any) {
-      console.error("Firebase Google Login Error", err);
+      console.warn("[FIREBASE] Google Sign-In connection check:", err.message || err);
       if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
         addToast("Connexion annulée.", 'info');
       } else {
@@ -731,7 +731,7 @@ export default function App() {
     const cleanedEmail = email.trim().toLowerCase();
     const assignedRole = (role === 'admin' && cleanedEmail !== 'koffiw4@gmail.com') ? 'candidate' : role;
 
-    if (!isFirebaseAvailableByConfig || !rawConfig || !rawConfig.apiKey || rawConfig.apiKey === '') {
+    if (!getIsFirebaseAvailable() || !rawConfig || !rawConfig.apiKey || rawConfig.apiKey === '') {
       handleLocalSimulationInscription(name, cleanedEmail, assignedRole, password);
       return;
     }
