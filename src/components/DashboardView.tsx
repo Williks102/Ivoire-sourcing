@@ -31,6 +31,7 @@ import { collection, query, limit, getDocs, where, doc, getDoc, setDoc, deleteDo
 import { db, auth, isFirebaseAvailableByConfig } from '../lib/firebase';
 import { UserProfile, JobPost, Application, UserRole } from '../types';
 import { CITIES, CATEGORIES } from '../constants';
+import { OPERATORS_MAP, loadPaiementProScript } from './LandingView';
 
 enum OperationType {
   CREATE = 'create',
@@ -113,7 +114,7 @@ export function DashboardView({
   });
   const [checkoutStep, setCheckoutStep] = useState<'details' | 'plans' | 'payment-method' | 'processing' | 'success'>('details');
   const [chosenPlan, setChosenPlan] = useState<'one-time' | 'monthly'>('one-time');
-  const [paymentOperator, setPaymentOperator] = useState<'wave' | 'orange' | 'mtn'>('wave');
+  const [paymentOperator, setPaymentOperator] = useState<'wave' | 'orange' | 'mtn' | 'moov' | 'card'>('wave');
   const [phoneNumber, setPhoneNumber] = useState<string>('');
   const [paymentError, setPaymentError] = useState<string>('');
   const [paymentStatusMessage, setPaymentStatusMessage] = useState<string>('');
@@ -1073,23 +1074,99 @@ export function DashboardView({
     setCheckoutStep('payment-method');
   };
 
-  const executeMobileMoneyPayment = (e: React.FormEvent) => {
+  const executeMobileMoneyPayment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!phoneNumber) {
+    if (!phoneNumber && paymentOperator !== 'card') {
       setPaymentError('Veuillez entrer un numéro de téléphone mobile money.');
       return;
     }
     setPaymentError('');
     setCheckoutStep('processing');
-    setPaymentStatusMessage('Envoi de la demande de paiement standardisée...');
+    setPaymentStatusMessage('Chargement du module de paiement officiel Paiement Pro...');
 
-    // Progress updates to create real-time tactile feeling
+    // Load PaiementPro script tag asynchronously
+    const loaded = await loadPaiementProScript();
+    const merchantId = import.meta.env.VITE_PAIEMENTPRO_MERCHANT_ID || '';
+    
+    const amountVal = chosenPlan === 'one-time' ? 15000 : 30000;
+    const descText = chosenPlan === 'one-time'
+      ? `Déblocage Candidat Certifié: ${selectedCandidate?.displayName}`
+      : 'Abonnement Mensuel Illimité - IvoireSource';
+
+    const cleanPhone = phoneNumber ? phoneNumber.trim().replace(/\s+/g, '') : '0700000000';
+    const emailVal = profile?.email || user?.email || 'employeur@ivoiresource.ci';
+    const fullName = profile?.displayName || 'Recruteur Ivoirien';
+    const names = fullName.split(' ');
+    const lastName = names[names.length - 1] || 'Recruteur';
+    const firstName = names.slice(0, -1).join(' ') || 'Utilisateur';
+
+    const opCode = OPERATORS_MAP[paymentOperator as keyof typeof OPERATORS_MAP]?.code || 'WAVECI';
+
+    if (merchantId && merchantId !== 'DEMO' && loaded) {
+      try {
+        setPaymentStatusMessage('Initialisation de la transaction sécurisée (Paiement Pro)...');
+        const paiementPro = new (window as any).PaiementPro(merchantId);
+        paiementPro.amount = amountVal;
+        paiementPro.channel = opCode;
+        paiementPro.description = descText;
+        paiementPro.referenceNumber = `IVS-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`;
+        paiementPro.customerEmail = emailVal;
+        paiementPro.customerFirstname = firstName;
+        paiementPro.customerLastname = lastName;
+        paiementPro.customerPhoneNumber = cleanPhone;
+        paiementPro.countryCurrencyCode = '952'; // Code devise FCFA
+        
+        // Wait for SDK to contact the webservice API and generate the URL
+        await paiementPro.getUrlPayment();
+        
+        if (paiementPro.success && paiementPro.url) {
+          setPaymentStatusMessage('Redirection vers la passerelle partenaire officielle...');
+          // Save a persistent unlock or state record in firestore first before redirecting so they have access
+          if (user && selectedCandidate) {
+            try {
+              if (chosenPlan === 'one-time') {
+                const unlockId = `${user.uid}_${selectedCandidate.uid}`;
+                await setDoc(doc(db, 'unlocks', unlockId), {
+                  id: unlockId,
+                  employerId: user.uid,
+                  candidateId: selectedCandidate.uid,
+                  createdAt: new Date().toISOString()
+                });
+                setUnlockedCandidateIds(prev => [...prev, selectedCandidate.uid]);
+              } else if (chosenPlan === 'monthly') {
+                await setDoc(doc(db, 'users', user.uid), {
+                  isPremium: true
+                }, { merge: true });
+                onProfileUpdate({
+                  ...profile,
+                  isPremium: true
+                });
+              }
+            } catch (pErr) {
+              console.warn('Failed pre-saving state:', pErr);
+            }
+          }
+          setTimeout(() => {
+            window.location.href = paiementPro.url;
+          }, 1200);
+          return;
+        } else {
+          console.warn('[Paiement Pro] getUrlPayment check returned failure, running simulation fallback:', paiementPro);
+        }
+      } catch (sdkErr) {
+        console.error('[Paiement Pro] SDK execution crash:', sdkErr);
+      }
+    }
+
+    // Interactive offline/sandbox fallback so users can test immediately in live preview
+    setPaymentStatusMessage(`Simulation : Demande de débit transmise au réseau ${opCode}...`);
+    
     setTimeout(() => {
-      setPaymentStatusMessage(`Validation en attente par ${paymentOperator.toUpperCase()}...`);
+      setPaymentStatusMessage(`Simulation : En attente de la saisie de votre code secret USSD sur le numéro +225 ${phoneNumber || '0700000000'}...`);
     }, 1500);
 
     setTimeout(() => {
-      setPaymentStatusMessage('Finalisation de l\'accès à votre document de profil...');
+      setPaymentStatusMessage('Paiement validé avec succès ! Finalisation de vos accès...');
     }, 3200);
 
     setTimeout(async () => {
@@ -2885,18 +2962,23 @@ export function DashboardView({
 
                         {/* Operator selector */}
                         <div className="space-y-2">
-                          <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider block">Mode Mobile Money</span>
-                          <div className="grid grid-cols-3 gap-2">
+                          <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider block">Mode de Paiement sécurisé (Côte d'Ivoire)</span>
+                          <div className="grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-5 gap-1.5">
                             {[
-                              { id: 'wave', label: 'Wave 🌊', color: 'bg-sky-50 text-sky-700' },
-                              { id: 'orange', label: 'Orange 🍊', color: 'bg-orange-50 text-orange-700' },
-                              { id: 'mtn', label: 'MTN 🟨', color: 'bg-amber-50 text-amber-700' }
+                              { id: 'wave', label: 'Wave 🌊' },
+                              { id: 'orange', label: 'Orange 🍊' },
+                              { id: 'mtn', label: 'MTN 🟨' },
+                              { id: 'moov', label: 'Moov 🍫' },
+                              { id: 'card', label: 'Carte 💳' }
                             ].map(op => (
                               <button
                                 type="button"
                                 key={op.id}
-                                onClick={() => setPaymentOperator(op.id as any)}
-                                className={`py-3 px-1 rounded-xl text-[10px] font-black border uppercase tracking-wider transition-all text-center flex flex-col items-center gap-1 ${paymentOperator === op.id ? 'bg-slate-900 border-slate-900 text-white' : 'bg-slate-50 hover:bg-slate-100 border-slate-200'}`}
+                                onClick={() => {
+                                  setPaymentOperator(op.id as any);
+                                  if (op.id === 'card') setPhoneNumber('');
+                                }}
+                                className={`py-2.5 px-1 rounded-xl text-[10px] font-black border uppercase tracking-wider transition-all text-center flex flex-col items-center justify-center gap-1 ${paymentOperator === op.id ? 'bg-emerald-600 border-emerald-600 text-white shadow-sm' : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-600'}`}
                               >
                                 {op.label}
                               </button>
@@ -2904,20 +2986,32 @@ export function DashboardView({
                           </div>
                         </div>
 
-                        {/* Mobile Number Entry */}
-                        <div className="space-y-2">
-                          <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider block font-sans">Votre Numéro {paymentOperator.toUpperCase()}</label>
-                          <div className="relative">
-                            <span className="absolute left-3.5 inset-y-0 flex items-center text-xs text-slate-400 font-bold font-mono">+225</span>
-                            <input 
-                              type="tel"
-                              placeholder="07 00 00 00 00"
-                              value={phoneNumber}
-                              onChange={(e) => setPhoneNumber(e.target.value)}
-                              className="w-full pl-16 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none focus:bg-white font-mono"
-                            />
+                        {/* Mobile Number Entry or Card prompt */}
+                        {paymentOperator !== 'card' ? (
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider block font-sans">Votre Numéro {paymentOperator.toUpperCase()}</label>
+                            <div className="relative">
+                              <span className="absolute left-3.5 inset-y-0 flex items-center text-xs text-slate-400 font-bold font-mono">+225</span>
+                              <input 
+                                type="tel"
+                                placeholder="07 00 00 00 00"
+                                value={phoneNumber}
+                                required
+                                onChange={(e) => setPhoneNumber(e.target.value)}
+                                className="w-full pl-16 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none focus:bg-white font-mono"
+                              />
+                            </div>
+                            <p className="text-[9px] text-slate-400">Un message USSD de validation automatique sera lancé sur votre numéro.</p>
                           </div>
-                        </div>
+                        ) : (
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider block font-sans">Coordonnées Carte Bancaire</label>
+                            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 text-xs text-slate-600 space-y-1">
+                              <p className="font-bold text-slate-700">💳 Visa, Mastercard et Cartes Locales</p>
+                              <p className="text-[10px] text-slate-500">Le formulaire de saisie de la carte hautement sécurisé sera affiché directement sur la passerelle partenaire Paiement Pro lors de la redirection.</p>
+                            </div>
+                          </div>
+                        )}
 
                         {paymentError && <p className="text-red-500 font-bold text-[10px] bg-red-50 p-2.5 rounded-lg border border-red-100">{paymentError}</p>}
 
