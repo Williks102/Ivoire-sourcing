@@ -1,0 +1,42 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL") // Connection string of your Neon PostgreSQL
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// User model: Custom representation of Firebase Auth session inside Neon
+model User {
+  // User ID must match the UID coming from Firebase Auth (SDK Client/Server sessions)
+  id        String   @id
+  email     String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Relations
+  orders    Order[]
+}
+
+enum OrderStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+// Order model: Handles transaction status, payment references, and payment amounts
+model Order {
+  id              String      @id @default(uuid())
+  amount          Int         // Stored in CFA (integer - without decimals)
+  status          OrderStatus @default(PENDING)
+  referenceNumber String      @unique // Unique transaction reference (e.g., IVS-171782...)
+  paymentUrl      String?     @db.Text
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  // Foreign keys
+  userId          String
+  user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+}

@@ -1,0 +1,121 @@
+import { NextResponse } from 'next/server';
+import { PrismaClient } from '@prisma/client';
+
+// Simple prisma client instantiator (recommended pattern to avoid hot-reload leaks in development)
+const globalForPrisma = global as unknown as { prisma: PrismaClient };
+const prisma = globalForPrisma.prisma || new PrismaClient();
+if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
+
+/**
+ * App Router Handler: POST /api/pay
+ * This API Route initializes the checkout session via Paiement Pro.
+ */
+export async function POST(request: Request) {
+  try {
+    const body = await request.json();
+    const { amount, userId, email, firstName, lastName, phoneNumber, channel } = body;
+
+    // 1. Validation of required inputs
+    if (!amount || amount <= 0) {
+      return NextResponse.json({ error: "Le montant saisi est invalide." }, { status: 400 });
+    }
+    if (!userId) {
+      return NextResponse.json({ error: "L'identifiant utilisateur est requis." }, { status: 400 });
+    }
+
+    // 2. Ensure User exists in Neon Database (matching Firebase Auth UID)
+    // In a hybrid architecture, we either sync users during sign-up or upsert them lazily during checkout
+    const user = await prisma.user.upsert({
+      where: { id: userId },
+      update: {},
+      create: {
+        id: userId,
+        email: email || `user-${userId}@temp.ci`,
+        name: `${firstName || ''} ${lastName || ''}`.trim() || 'Client',
+      }
+    });
+
+    // 3. Generate a distinctive, unique transaction reference
+    // Format: prefix-[timestamp]-[three-random-digits]
+    const referenceNumber = `PAY-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`;
+
+    // 4. Record the pending order inside Neon DB
+    const order = await prisma.order.create({
+      data: {
+        amount: Math.round(amount),
+        status: "PENDING",
+        referenceNumber,
+        userId: user.id,
+      }
+    });
+
+    // 5. Build Paiement Pro standard POST payload
+    const merchantId = process.env.PAIEMENTPRO_MERCHANT_ID;
+    if (!merchantId) {
+      throw new Error("La variable d'environnement PAIEMENTPRO_MERCHANT_ID n'est pas configurée.");
+    }
+
+    // Add webhook query parameters with a secret Token to protect your endpoint from spoofing
+    const callbackSecretToken = process.env.PAYMENT_WEBHOOK_SECRET || 'SUPER_SECRET_TOKEN';
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://votre-site.com';
+    
+    const notificationURL = `${baseUrl}/api/webhook?token=${callbackSecretToken}`;
+    const returnURL = `${baseUrl}/checkout/confirmation?reference=${referenceNumber}`;
+
+    const paymentPayload = {
+      merchantId: merchantId,
+      amount: Math.round(amount),
+      description: `Commande ${order.id} sur votre plateforme`,
+      channel: channel || 'WAVECI', // default to Wave CI (WAVECI, OMCI, MTNCI, MOOVCI, CARD)
+      countryCurrencyCode: '952',   // FCFA
+      referenceNumber: referenceNumber,
+      customerEmail: email || 'client@telecom.ci',
+      customerFirstName: firstName || 'Client',
+      customerLastname: lastName || 'Acheteur',
+      customerPhoneNumber: phoneNumber ? phoneNumber.replace(/\s+/g, '') : '0700000000',
+      notificationURL: notificationURL,
+      returnURL: returnURL,
+      returnContext: JSON.stringify({ orderId: order.id, userId: user.id }),
+    };
+
+    // 6. Make server-to-server POST initialization call to Paiement Pro webservice
+    const apiResponse = await fetch("https://www.paiementpro.net/webservice/onlinepayment/js/initialize/initialize.php", {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(paymentPayload)
+    });
+
+    if (!apiResponse.ok) {
+      throw new Error(`Erreur réseau Paiement Pro: ${apiResponse.statusText}`);
+    }
+
+    const apiData = await apiResponse.json();
+
+    if (!apiData.success || !apiData.url) {
+      throw new Error(apiData.message || "Paiement Pro n'a pas pu générer l'adresse de redirection.");
+    }
+
+    // 7. Update the order with generated URL
+    await prisma.order.update({
+      where: { id: order.id },
+      data: { paymentUrl: apiData.url }
+    });
+
+    // 8. Return response containing redirect gateway URL and local order references
+    return NextResponse.json({
+      success: true,
+      paymentUrl: apiData.url,
+      referenceNumber
+    });
+
+  } catch (error: any) {
+    console.error("[PAY_INITIALIZER_ERROR]:", error);
+    return NextResponse.json({
+      success: false,
+      error: error.message || "Erreur interne lors de l'initialisation du paiement."
+    }, { status: 500 });
+  }
+}

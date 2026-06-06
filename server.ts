@@ -211,6 +211,232 @@ app.post('/api/moderation/check-job', moderationLimiter, async (req, res) => {
   }
 });
 
+// Real Paiement Pro Integration API Route with Deep Auditing and Debugging Logs
+app.post('/api/pay', async (req, res) => {
+  const logSeparator = '='.repeat(60);
+  console.log(logSeparator);
+  console.log('[PAY_ROUTE_TRIGGERED] Received checkout generation request');
+  console.log('[PAY_ROUTE_REQUEST_HEADERS]:', JSON.stringify(req.headers, null, 2));
+  console.log('[PAY_ROUTE_REQUEST_BODY]:', JSON.stringify(req.body, null, 2));
+  console.log(logSeparator);
+
+  try {
+    const {
+      amount,
+      userId,
+      email,
+      firstName,
+      lastName,
+      phoneNumber,
+      channel
+    } = req.body;
+
+    // Validate inputs
+    if (!amount || Number(amount) <= 0) {
+      console.warn('⚠️ [PAY_ROUTE_VALIDATION_ERROR]: Invalid or missing amount parameter:', amount);
+      return res.status(400).json({ error: 'Le montant est obligatoire et doit être supérieur à 0.' });
+    }
+
+    const merchantId = process.env.PAIEMENTPRO_MERCHANT_ID || process.env.VITE_PAIEMENTPRO_MERCHANT_ID || '';
+    console.log('[PAY_ROUTE_CONFIG_CHECK] Checked environment for credentials:');
+    console.log('- PAIEMENTPRO_MERCHANT_ID:', merchantId ? `Loaded (${merchantId.substring(0, 4)}...)` : 'MISSING ❌');
+    console.log('- PAYMENT_WEBHOOK_SECRET:', process.env.PAYMENT_WEBHOOK_SECRET ? 'Defined' : 'NOT DEFINED (Using fallback: SUPER_SECRET_TOKEN)');
+    console.log('- NEXT_PUBLIC_APP_URL:', process.env.NEXT_PUBLIC_APP_URL ? process.env.NEXT_PUBLIC_APP_URL : 'NOT DEFINED (Using sandbox fallback)');
+
+    if (!merchantId) {
+      const configErr = 'PAIEMENTPRO_MERCHANT_ID is completely blank. Route cannot generate secure token links.';
+      console.error('❌ [PAY_ROUTE_CONFIG_ERROR]:', configErr);
+      return res.status(500).json({
+        error: "Le serveur n'est pas lié à un identifiant de marchand Paiement Pro valide.",
+        diagnostics: "Assurez-vous d'avoir déclaré PAIEMENTPRO_MERCHANT_ID ou VITE_PAIEMENTPRO_MERCHANT_ID dans vos secrets / variables d'environnement."
+      });
+    }
+
+    // Generate unique reference
+    const referenceNumber = `IVS-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`;
+    const localWebhookSecret = process.env.PAYMENT_WEBHOOK_SECRET || 'SUPER_SECRET_TOKEN';
+    
+    // Dynamically retrieve base app URL
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://ivoiresource.ci';
+    const notificationURL = `${baseUrl}/api/webhook?token=${localWebhookSecret}`;
+    const returnURL = `${baseUrl}/checkout-confirmation?reference=${referenceNumber}`;
+
+    // Compile exact request payload according to Paiement Pro specifications (checking casing variations)
+    const paymentPayload = {
+      merchantId: merchantId,
+      amount: Math.round(Number(amount)),
+      description: `Premium Profile Activation for User ${userId || 'guest-session'}`,
+      channel: channel || 'WAVECI', // e.g., WAVECI, OMCI, MTNCI, MOOVCI, CARD
+      countryCurrencyCode: '952',   // FCFA
+      referenceNumber: referenceNumber,
+      customerEmail: email || 'client@ivoiresource.ci',
+      customerFirstName: firstName || 'Abonné',
+      customerFirstname: firstName || 'Abonné', // Casing compatibility
+      customerLastName: lastName || 'Acheteur',
+      customerLastname: lastName || 'Acheteur',   // Casing compatibility
+      customerPhoneNumber: phoneNumber ? phoneNumber.trim().replace(/\s+/g, '') : '0700000000',
+      notificationURL: notificationURL,
+      returnURL: returnURL,
+      returnContext: JSON.stringify({ userId, reference: referenceNumber })
+    };
+
+    console.log('[PAY_ROUTE_API_CALL] Preparing POST request call to Paiement Pro webservice:');
+    console.log('Target URL: https://www.paiementpro.net/webservice/onlinepayment/js/initialize/initialize.php');
+    console.log('Headers Sent: { Accept: "application/json", Content-Type: "application/json" }');
+    console.log('Body Sent:', JSON.stringify(paymentPayload, null, 2));
+
+    const startTime = Date.now();
+    let apiResponse;
+    try {
+      apiResponse = await fetch("https://www.paiementpro.net/webservice/onlinepayment/js/initialize/initialize.php", {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(paymentPayload)
+      });
+    } catch (networkError: any) {
+      const callDuration = Date.now() - startTime;
+      console.error(`❌ [PAY_ROUTE_NETWORK_ERROR] Network layer crashed after ${callDuration}ms:`);
+      console.error('- Message:', networkError.message);
+      console.error('- Error Code:', networkError.code);
+      console.error('- Stack Trace:', networkError.stack);
+      return res.status(502).json({
+        error: "Impossible d'établir une connexion réseau avec l'API officielle de Paiement Pro.",
+        network_diagnostics: {
+          message: networkError.message,
+          code: networkError.code,
+          duration_ms: callDuration
+        }
+      });
+    }
+
+    const duration = Date.now() - startTime;
+    console.log(`[PAY_ROUTE_API_RESPONSE] HTTP Response received in ${duration}ms:`);
+    console.log(`- Status Code: ${apiResponse.status} (${apiResponse.statusText})`);
+    console.log('- Headers Received:', JSON.stringify(Array.from(apiResponse.headers.entries()), null, 2));
+
+    // Safely retrieve the response body as plain text first (to avoid crashes from HTML/PHP error stacks)
+    const responseText = await apiResponse.text();
+    console.log('[PAY_ROUTE_API_RESPONSE] Raw Body Received:', responseText);
+
+    if (!apiResponse.ok) {
+      console.error(`❌ [PAY_ROUTE_RESPONSE_NOT_OK] Server rejected the request: HTTP ${apiResponse.status}`);
+      return res.status(apiResponse.status).json({
+        error: `La passerelle de paiement a retourné une erreur HTTP ${apiResponse.status}`,
+        details: responseText
+      });
+    }
+
+    // Try parsing JSON safely
+    let apiData: any;
+    try {
+      apiData = JSON.parse(responseText);
+    } catch (jsonParseErr: any) {
+      console.error('❌ [PAY_ROUTE_JSON_PARSE_ERROR] Failed to parse return text as JSON:');
+      console.error('- Error message:', jsonParseErr.message);
+      console.error('- Raw text dump:', responseText);
+      return res.status(502).json({
+        error: "Erreur de format renvoyée par le serveur Paiement Pro.",
+        diagnostics: "Le serveur a répondu avec du texte brut ou du HTML au lieu d'un objet JSON.",
+        rawResponse: responseText
+      });
+    }
+
+    console.log('[PAY_ROUTE_PARSED_JSON]:', JSON.stringify(apiData, null, 2));
+
+    if (!apiData.success || !apiData.url) {
+      console.warn('⚠️ [PAY_ROUTE_GATEWAY_REJECTED]: Paiement Pro declined order creation:', apiData.message);
+      return res.status(400).json({
+        success: false,
+        error: apiData.message || "Paiement Pro a refusé d'initier la transaction.",
+        gatewayResponse: apiData
+      });
+    }
+
+    console.log('✅ [PAY_ROUTE_SUCCESS]: Generated Checkout URL:', apiData.url);
+
+    return res.json({
+      success: true,
+      paymentUrl: apiData.url,
+      referenceNumber: referenceNumber
+    });
+
+  } catch (outerErr: any) {
+    console.error('❌ [PAY_ROUTE_UNCAUGHT_FATAL_ERROR] Unhandled crash in backend route handler:');
+    console.error('- Error Message:', outerErr.message);
+    console.error('- Stack Trace:', outerErr.stack);
+    return res.status(500).json({
+      success: false,
+      error: "Une erreur critique d'exécution est survenue sur le serveur.",
+      details: outerErr.message
+    });
+  }
+});
+
+// Real Paiement Pro Webhook Listener route with Security auditing logs
+app.post('/api/webhook', async (req, res) => {
+  const logSeparator = '='.repeat(60);
+  console.log(logSeparator);
+  console.log('[WEBHOOK_ROUTE_TRIGGERED] Received Instant Payment Notification (IPN)');
+  console.log('[WEBHOOK_QUERY_PARAMS]:', JSON.stringify(req.query, null, 2));
+  console.log('[WEBHOOK_HEADERS]:', JSON.stringify(req.headers, null, 2));
+  console.log('[WEBHOOK_RAW_BODY]:', JSON.stringify(req.body, null, 2));
+  console.log(logSeparator);
+
+  try {
+    // 1. Audit Security Token Query Param
+    const token = req.query.token;
+    const localWebhookSecret = process.env.PAYMENT_WEBHOOK_SECRET || 'SUPER_SECRET_TOKEN';
+
+    if (!token || token !== localWebhookSecret) {
+      console.warn('❌ [WEBHOOK_UNAUTHORIZED_ALERT]: Verification token mismatched or absent!');
+      console.warn(`- Token received: "${token || 'N/A'}"`);
+      console.warn(`- Expected token length: ${localWebhookSecret.length} chars`);
+      return res.status(401).json({ error: "Unauthorized security token. Access denied." });
+    }
+
+    const payload = req.body;
+    const reference = payload.reference || payload.referenceNumber || payload.ref;
+    const status = payload.status || payload.payment_status;
+    const amount = payload.amount;
+
+    console.log('[WEBHOOK_DATA_EXTRACTED]:', { reference, status, amount });
+
+    if (!reference) {
+      console.error('❌ [WEBHOOK_BAD_PAYLOAD]: No unique reference is attached to this request!');
+      return res.status(400).json({ error: "Mandatory transaction reference is missing from hook body." });
+    }
+
+    if (status === 'SUCCESS' || status === 'APPROVED') {
+      console.log(`🎉 [WEBHOOK_SUCCESS] Transaction ${reference} was verified as PAID!`);
+      // Broadcast payment success instantly over WebSockets to client frames
+      broadcastAction('premium_payment_success', {
+        referenceNumber: reference,
+        amount: amount,
+        timestamp: new Date().toISOString()
+      });
+    } else {
+      console.log(`⚠️ [WEBHOOK_STATUS_UPDATE] Transaction ${reference} is currently marked as failed or cancelled (Status: ${status})`);
+      broadcastAction('premium_payment_failed', {
+        referenceNumber: reference,
+        status: status,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // Acknowledge payload with 200 OK so Paiement Pro stops retrying
+    return res.json({ success: true, message: "Webhook processed and registered successfully" });
+
+  } catch (webhookErr: any) {
+    console.error('❌ [WEBHOOK_CRITICAL_ERROR]: Failed to process standard Webhook payload:');
+    console.error('- Message:', webhookErr.message);
+    console.error('- Stack:', webhookErr.stack);
+    return res.status(500).json({ error: "Failed to parse or process notification payload." });
+  }
+});
+
 // "Payment" Simulation
 app.post('/api/payments/checkout-premium', paymentLimiter, async (req, res) => {
   const parsed = CheckoutPremiumSchema.safeParse(req.body);
