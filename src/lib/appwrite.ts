@@ -5,8 +5,9 @@ import { Client, Account, Databases, Storage } from 'appwrite';
 // Idéale avec les variables d'environnement Vite pour ne pas exposer tes IDs publiquement
 export const APPWRITE_CONFIG = {
   ENDPOINT: import.meta.env.VITE_APPWRITE_ENDPOINT || 'https://cloud.appwrite.io/v1',
-  PROJECT_ID: import.meta.env.VITE_APPWRITE_PROJECT_ID || 'ton_project_id_ici',
-  DATABASE_ID: import.meta.env.VITE_APPWRITE_DATABASE_ID || 'ton_database_id_ici',
+  PROJECT_ID: import.meta.env.VITE_APPWRITE_PROJECT_ID || '',
+  DATABASE_ID: import.meta.env.VITE_APPWRITE_DATABASE_ID || '',
+  BUCKET_CV_ID: import.meta.env.VITE_APPWRITE_BUCKET_CV_ID || '',
 };
 
 // Initialisation unique du client Appwrite

@@ -1,6 +1,7 @@
 import React, { useEffect, useState, createContext, useContext, useMemo } from 'react';
 type Unsubscribe = () => void;
-import { db, auth, doc, setDoc, getDoc, deleteDoc, collection, query, where, limit, getDocs, addDoc, signOut, onSnapshot, isBackendAvailable, getIsBackendAvailable, disableBackend, rawConfig, googleProvider } from './backend';
+import { Query } from 'appwrite';
+import client, { databases, APPWRITE_CONFIG } from './appwrite';
 import { UserProfile, JobPost, Application } from '../types';
 
 // ==========================================
@@ -31,8 +32,8 @@ function handleHubError(error: unknown, operation: OperationType, path: string |
   const errInfo: SourcingHubError = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
-      userId: auth?.currentUser?.uid || 'anonymous',
-      email: auth?.currentUser?.email || null,
+      userId: 'anonymous',
+      email: null,
     },
     operationType: operation,
     path
@@ -80,67 +81,79 @@ export function SourcingHubProvider({ children, currentUser }: { children: React
   const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    // Si Backend n'est pas disponible ou aucun utilisateur n'est connecté, on arrête l'écoute en direct
-    if (!isBackendAvailable || !currentUser) {
+    if (!currentUser || !APPWRITE_CONFIG.DATABASE_ID) {
       setLoading(false);
       return;
     }
 
+    let mounted = true;
     const unsubscribes: Unsubscribe[] = [];
     setLoading(true);
 
+    const normalizeUser = (document: any) => ({ uid: document.uid || document.$id, id: document.$id, ...document }) as UserProfile;
+    const normalizeJob = (document: any) => ({ id: document.id || document.$id, ...document }) as JobPost;
+    const normalizeApplication = (document: any) => ({ id: document.id || document.$id, ...document }) as Application;
+
+    const upsertById = <T extends { id?: string; uid?: string }>(items: T[], next: T) => {
+      const nextId = next.id || next.uid;
+      const exists = items.some(item => (item.id || item.uid) === nextId);
+      return exists
+        ? items.map(item => ((item.id || item.uid) === nextId ? next : item))
+        : [next, ...items];
+    };
+
     try {
-      // Écouteur 1 : Collection des utilisateurs (Candidats dispos)
-      // On optimise en écoutant uniquement les candidats pour minimiser le coût réseau
-      const candidatesQuery = query(
-        collection(db, 'users'), 
-        where('role', '==', 'candidate')
-      );
-      const unsubCandidates = onSnapshot(candidatesQuery, (snapshot) => {
-        const list: UserProfile[] = [];
-        snapshot.forEach((docSnap) => {
-          list.push({ uid: docSnap.id, ...docSnap.data() } as UserProfile);
-        });
-        setCandidates(list);
-      }, (error) => {
-        handleHubError(error, OperationType.LIST, 'users');
-      });
-      unsubscribes.push(unsubCandidates);
-
-      // Écouteur 2 : Collection des Missions (Jobs) en cours
-      const jobsQuery = collection(db, 'jobs');
-      const unsubJobs = onSnapshot(jobsQuery, (snapshot) => {
-        const list: JobPost[] = [];
-        snapshot.forEach((docSnap) => {
-          list.push({ id: docSnap.id, ...docSnap.data() } as JobPost);
-        });
-        setJobs(list);
-      }, (error) => {
-        handleHubError(error, OperationType.LIST, 'jobs');
-      });
-      unsubscribes.push(unsubJobs);
-
-      // Écouteur 3 : Collection des candidatures (Applications)
-      const appsQuery = collection(db, 'applications');
-      const unsubApps = onSnapshot(appsQuery, (snapshot) => {
-        const list: Application[] = [];
-        snapshot.forEach((docSnap) => {
-          list.push({ id: docSnap.id, ...docSnap.data() } as Application);
-        });
-        setApplications(list);
+      Promise.all([
+        databases.listDocuments(APPWRITE_CONFIG.DATABASE_ID, 'users', [Query.equal('role', 'candidate'), Query.limit(100)]),
+        databases.listDocuments(APPWRITE_CONFIG.DATABASE_ID, 'jobs', [Query.limit(100)]),
+        databases.listDocuments(APPWRITE_CONFIG.DATABASE_ID, 'applications', [Query.limit(100)]),
+      ]).then(([usersRes, jobsRes, appsRes]) => {
+        if (!mounted) return;
+        setCandidates(usersRes.documents.map(normalizeUser));
+        setJobs(jobsRes.documents.map(normalizeJob));
+        setApplications(appsRes.documents.map(normalizeApplication));
         setLoading(false);
-      }, (error) => {
-        handleHubError(error, OperationType.LIST, 'applications');
+      }).catch(error => {
+        if (mounted) {
+          console.error('[SOURCING_HUB] Erreur de chargement Appwrite:', error);
+          setLoading(false);
+        }
       });
-      unsubscribes.push(unsubApps);
 
+      unsubscribes.push(client.subscribe(`databases.${APPWRITE_CONFIG.DATABASE_ID}.collections.users.documents`, (event) => {
+        const payload = normalizeUser(event.payload);
+        if (payload.role !== 'candidate') return;
+        if (event.events.some(e => e.endsWith('.delete'))) {
+          setCandidates(prev => prev.filter(item => item.uid !== payload.uid));
+        } else {
+          setCandidates(prev => upsertById(prev, payload));
+        }
+      }));
+
+      unsubscribes.push(client.subscribe(`databases.${APPWRITE_CONFIG.DATABASE_ID}.collections.jobs.documents`, (event) => {
+        const payload = normalizeJob(event.payload);
+        if (event.events.some(e => e.endsWith('.delete'))) {
+          setJobs(prev => prev.filter(item => item.id !== payload.id));
+        } else {
+          setJobs(prev => upsertById(prev, payload));
+        }
+      }));
+
+      unsubscribes.push(client.subscribe(`databases.${APPWRITE_CONFIG.DATABASE_ID}.collections.applications.documents`, (event) => {
+        const payload = normalizeApplication(event.payload);
+        if (event.events.some(e => e.endsWith('.delete'))) {
+          setApplications(prev => prev.filter(item => item.id !== payload.id));
+        } else {
+          setApplications(prev => upsertById(prev, payload));
+        }
+      }));
     } catch (e) {
-      console.error('[SOURCING_HUB] Erreur lors du montage des écouteurs réactifs:', e);
+      console.error('[SOURCING_HUB] Erreur lors du montage des abonnements Appwrite:', e);
       setLoading(false);
     }
 
-    // Nettoyage automatique des écouteurs lors du démontage ou changement d'utilisateur
     return () => {
+      mounted = false;
       unsubscribes.forEach(unsub => unsub());
     };
   }, [currentUser]);

@@ -3,7 +3,7 @@ import { ID, Query } from 'appwrite';
 import { databases, storage, APPWRITE_CONFIG } from '../lib/appwrite';
 
 // ID du Bucket pour les CV (à créer dans la section Storage de votre console Appwrite)
-const BUCKET_CV_ID = 'cv_bucket_id'; 
+const BUCKET_CV_ID = APPWRITE_CONFIG.BUCKET_CV_ID;
 
 export const sourcingService = {
   
@@ -33,7 +33,7 @@ export const sourcingService = {
    * @param candidateId ID de l'utilisateur connecté
    * @param cvFile Fichier PDF récupéré depuis un input <input type="file" />
    */
-  async submitApplication(jobId: string, candidateId: string, cvFile: File) {
+  async submitApplication(jobId: string, candidateId: string, cvFile: File, extraData: Record<string, unknown> = {}) {
     try {
       // 1. Envoyer le fichier du CV dans le Storage d'Appwrite
       // ID.unique() permet à Appwrite de générer un identifiant de fichier unique
@@ -43,8 +43,11 @@ export const sourcingService = {
       const applicationData = {
         jobId: jobId,
         candidateId: candidateId,
-        status: 'applied',
-        cvFileId: uploadedFile.$id // On stocke la référence du fichier ici
+        status: 'pending',
+        cvFileId: uploadedFile.$id, // On stocke la référence du fichier ici
+        cvUrl: storage.getFileView(BUCKET_CV_ID, uploadedFile.$id).toString(),
+        createdAt: new Date().toISOString(),
+        ...extraData
       };
 
       const document = await databases.createDocument(

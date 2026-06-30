@@ -26,6 +26,7 @@ interface ApplicationFormModalProps {
     phone: string;
     cvName?: string;
     cvUrl?: string;
+    cvFile?: File;
     message: string;
   }) => void;
 }
@@ -47,7 +48,7 @@ export function ApplicationFormModal({ job, profile, onClose, onSubmit }: Applic
   const [phone, setPhone] = useState(profile?.phone || '');
   const [experience, setExperience] = useState<number>(1);
   const [selectedPhoto, setSelectedPhoto] = useState(profile?.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=200&auto=format&fit=crop');
-  const [cvFile, setCvFile] = useState<{ name: string; size: string; content?: string } | null>(
+  const [cvFile, setCvFile] = useState<{ name: string; size: string; content?: string; file?: File } | null>(
     profile?.cvName ? { name: profile.cvName, size: 'Enregistré sur votre profil', content: profile.cvUrl } : null
   );
   const [message, setMessage] = useState("Bonjour, je souhaite vivement proposer ma candidature pour ce poste. J'ai l'expérience requise et mon profil correspond tout à fait à vos attentes.");
@@ -75,7 +76,8 @@ export function ApplicationFormModal({ job, profile, onClose, onSubmit }: Applic
         setCvFile({
           name: file.name,
           size: (file.size / 1024 / 1024).toFixed(2) + ' MB',
-          content: reader.result as string
+          content: reader.result as string,
+          file
         });
       };
       reader.readAsDataURL(file);
@@ -90,7 +92,8 @@ export function ApplicationFormModal({ job, profile, onClose, onSubmit }: Applic
         setCvFile({
           name: file.name,
           size: (file.size / 1024 / 1024).toFixed(2) + ' MB',
-          content: reader.result as string
+          content: reader.result as string,
+          file
         });
       };
       reader.readAsDataURL(file);
@@ -118,6 +121,7 @@ export function ApplicationFormModal({ job, profile, onClose, onSubmit }: Applic
       phone: phone.trim(),
       cvName: cvFile ? cvFile.name : undefined,
       cvUrl: cvFile ? cvFile.content : undefined,
+      cvFile: cvFile?.file,
       message: message
     });
   };
