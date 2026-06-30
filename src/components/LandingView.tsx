@@ -24,8 +24,7 @@ import {
   FileText,
   UserCheck
 } from 'lucide-react';
-import { collection, getDocs, query, where, limit, setDoc, doc } from 'firebase/firestore';
-import { db, auth } from '../lib/firebase';
+import { db, auth, doc, setDoc, getDoc, deleteDoc, collection, query, where, limit, getDocs, addDoc, signOut, onSnapshot, isBackendAvailable, getIsBackendAvailable, disableBackend, rawConfig, googleProvider } from '../lib/backend';
 import { CATEGORIES, CITIES } from '../constants';
 import { JobPost, UserRole } from '../types';
 

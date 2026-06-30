@@ -34,7 +34,7 @@ app.use((req, res, next) => {
     "font-src 'self' https://fonts.gstatic.com",
     "img-src 'self' data: https://images.unsplash.com https://via.placeholder.com https://*.googleusercontent.com",
     "connect-src 'self' ws: wss: https://securetoken.googleapis.com https://identitytoolkit.googleapis.com https://*.googleapis.com",
-    "frame-src 'self' https://*.firebaseapp.com"
+    "frame-src 'self'"
   ].join('; '));
   next();
 });

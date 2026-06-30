@@ -126,7 +126,7 @@ export function ApplicationFormModal({ job, profile, onClose, onSubmit }: Applic
     initial: { y: "100%" },
     animate: { y: 0 },
     exit: { y: "100%" },
-    transition: { type: "spring", damping: 25, stiffness: 220 }
+    transition: {  damping: 25, stiffness: 220 }
   } : {
     initial: { scale: 0.95, y: 20 },
     animate: { scale: 1, y: 0 },

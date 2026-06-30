@@ -2,8 +2,9 @@ import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import { UserProfile } from '../types';
 import { CITIES, CATEGORIES } from '../constants';
-import { addDoc, collection } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { databases, APPWRITE_CONFIG } from '../lib/appwrite';
+import { ID } from 'appwrite';
+
 
 interface PostJobViewProps {
   onPosted: () => void;
@@ -83,11 +84,11 @@ export function PostJobView({ onPosted, profile }: PostJobViewProps) {
         return;
       }
 
-      await addDoc(collection(db, 'jobs'), jobData);
+      await databases.createDocument(APPWRITE_CONFIG.DATABASE_ID, 'jobs', ID.unique(), jobData);
       onPosted();
     } catch (err: any) {
       console.error("Erreur lors de la création de l'annonce d'emploi:", err);
-      alert("Une erreur s'est produite lors de la publication de l'offre d'emploi sur Firestore. Assurez-vous d'avoir configuré vos droits de base de données Firebase et d'être connecté.");
+      alert("Une erreur s'est produite lors de la publication de l'offre d'emploi sur Backend. Assurez-vous d'avoir configuré vos droits de base de données Backend et d'être connecté.");
     } finally {
       setSubmitting(false);
     }

@@ -1,16 +1,6 @@
 import React, { useEffect, useState, createContext, useContext, useMemo } from 'react';
-import { 
-  collection, 
-  query, 
-  where, 
-  onSnapshot, 
-  doc, 
-  getDoc, 
-  setDoc, 
-  deleteDoc,
-  Unsubscribe
-} from 'firebase/firestore';
-import { db, auth, isFirebaseAvailableByConfig } from './firebase';
+type Unsubscribe = () => void;
+import { db, auth, doc, setDoc, getDoc, deleteDoc, collection, query, where, limit, getDocs, addDoc, signOut, onSnapshot, isBackendAvailable, getIsBackendAvailable, disableBackend, rawConfig, googleProvider } from './backend';
 import { UserProfile, JobPost, Application } from '../types';
 
 // ==========================================
@@ -78,7 +68,7 @@ const SourcingHubContext = createContext<HubState | null>(null);
 
 /**
  * SourcingHubProvider : Composant conteneur unique qui gère l'orchestration des écouteurs
- * temps réel de Firestore de manière unifiée pour l'ensemble de l'application.
+ * temps réel de Backend de manière unifiée pour l'ensemble de l'application.
  * 
  * Il élimine la duplication de code et garantit que les candidats, employeurs, 
  * et administrateurs voient exactement les mêmes données synchronisées en temps réel.
@@ -90,8 +80,8 @@ export function SourcingHubProvider({ children, currentUser }: { children: React
   const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    // Si Firebase n'est pas disponible ou aucun utilisateur n'est connecté, on arrête l'écoute en direct
-    if (!isFirebaseAvailableByConfig || !currentUser) {
+    // Si Backend n'est pas disponible ou aucun utilisateur n'est connecté, on arrête l'écoute en direct
+    if (!isBackendAvailable || !currentUser) {
       setLoading(false);
       return;
     }

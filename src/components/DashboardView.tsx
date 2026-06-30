@@ -26,9 +26,7 @@ import {
   Eye,
   Paperclip
 } from 'lucide-react';
-import { User, signOut } from 'firebase/auth';
-import { collection, query, limit, getDocs, where, doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
-import { db, auth, isFirebaseAvailableByConfig as importedIsFirebaseAvailableByConfig, getIsFirebaseAvailable } from '../lib/firebase';
+import { db, auth, doc, setDoc, getDoc, deleteDoc, collection, query, where, limit, getDocs, addDoc, signOut, onSnapshot, isBackendAvailable, getIsBackendAvailable, disableBackend, rawConfig, googleProvider } from '../lib/backend';
 import { UserProfile, JobPost, Application, UserRole } from '../types';
 import { CITIES, CATEGORIES } from '../constants';
 import { OPERATORS_MAP, loadPaiementProScript } from './LandingView';
@@ -68,7 +66,7 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
 
 interface DashboardViewProps {
   profile: UserProfile | null;
-  user: User | null;
+  user: any | null;
   activeTab: 'overview' | 'verification' | 'my-jobs' | 'applications' | 'admin' | 'browse-candidates' | 'profile';
   setActiveTab: (tab: any) => void;
   onProfileUpdate: (p: UserProfile) => void;
@@ -83,7 +81,7 @@ export function DashboardView({
   onProfileUpdate,
   setView
 }: DashboardViewProps) {
-  const isFirebaseAvailableByConfig = getIsFirebaseAvailable();
+  const isBackendAvailable = getIsBackendAvailable();
   const [isMobile, setIsMobile] = useState<boolean>(false);
   useEffect(() => {
     const checkMobile = () => {
@@ -226,7 +224,7 @@ export function DashboardView({
 
       for (const jId of missingJobIds) {
         try {
-          const isDemo = !isFirebaseAvailableByConfig || (user?.uid?.startsWith('demo-') ?? true);
+          const isDemo = !isBackendAvailable || (user?.uid?.startsWith('demo-') ?? true);
           if (isDemo) {
             throw new Error("Client Offline Mode");
           }
@@ -253,7 +251,7 @@ export function DashboardView({
 
       for (const cId of missingCandIds) {
         try {
-          const isDemo = !isFirebaseAvailableByConfig || (user?.uid?.startsWith('demo-') ?? true);
+          const isDemo = !isBackendAvailable || (user?.uid?.startsWith('demo-') ?? true);
           if (isDemo) {
             throw new Error("Client Offline Mode");
           }
@@ -304,7 +302,7 @@ export function DashboardView({
 
   const updateAppStatus = async (appId: string, newStatus: string) => {
     try {
-      const isDemoMode = !isFirebaseAvailableByConfig || (user?.uid?.startsWith('demo-') ?? true);
+      const isDemoMode = !isBackendAvailable || (user?.uid?.startsWith('demo-') ?? true);
       if (isDemoMode) {
         const localApps = JSON.parse(localStorage.getItem('offline_applications') || '[]');
         const idx = localApps.findIndex((a: any) => a.id === appId);
@@ -380,7 +378,7 @@ export function DashboardView({
         cvName: profileCvFile ? profileCvFile.name : '',
         cvUrl: profileCvFile ? profileCvFile.content : '',
       };
-      const isDemoMode = !isFirebaseAvailableByConfig || (user?.uid?.startsWith('demo-') ?? true);
+      const isDemoMode = !isBackendAvailable || (user?.uid?.startsWith('demo-') ?? true);
       if (isDemoMode) {
         localStorage.setItem('demo_profile', JSON.stringify(updated));
         onProfileUpdate(updated);
@@ -411,7 +409,7 @@ export function DashboardView({
         isVerified: false, // will require admin verification
         bio: (profile.bio || '') + `\n[ID Soumise pour CNI/Passeport: N° ${idNumber}]`
       };
-      const isDemoMode = !isFirebaseAvailableByConfig || (user?.uid?.startsWith('demo-') ?? true);
+      const isDemoMode = !isBackendAvailable || (user?.uid?.startsWith('demo-') ?? true);
       if (isDemoMode) {
         localStorage.setItem('demo_profile', JSON.stringify(updated));
         onProfileUpdate(updated);
@@ -620,7 +618,7 @@ export function DashboardView({
 
   // ADMIN CONTROLS: Moderate Job Post (Approve/Reject)
   const updateJobStatus = async (jobId: string, newStatus: 'approved' | 'rejected' | 'closed') => {
-    const isDemoMode = !isFirebaseAvailableByConfig || (user?.uid?.startsWith('demo-') ?? true);
+    const isDemoMode = !isBackendAvailable || (user?.uid?.startsWith('demo-') ?? true);
     try {
       if (isDemoMode) {
         const localJobs = JSON.parse(localStorage.getItem('offline_jobs') || '[]');
@@ -662,7 +660,7 @@ export function DashboardView({
       title: "Supprimer l'offre",
       message: "Êtes-vous sûr de vouloir supprimer cette annonce définitivement ?",
       onConfirm: async () => {
-        const isDemoMode = !isFirebaseAvailableByConfig || (user?.uid?.startsWith('demo-') ?? true);
+        const isDemoMode = !isBackendAvailable || (user?.uid?.startsWith('demo-') ?? true);
         try {
           if (isDemoMode) {
             const localJobs = JSON.parse(localStorage.getItem('offline_jobs') || '[]');
@@ -803,7 +801,7 @@ export function DashboardView({
     e.preventDefault();
     if (!selectedManageJob || !user) return;
     try {
-      const isDemoMode = !isFirebaseAvailableByConfig || (user?.uid?.startsWith('demo-') ?? true);
+      const isDemoMode = !isBackendAvailable || (user?.uid?.startsWith('demo-') ?? true);
       const updatedJob: JobPost = {
         ...selectedManageJob,
         title: editJobForm.title,
@@ -867,7 +865,7 @@ export function DashboardView({
     
     const fetchData = async () => {
       setLoadingData(true);
-      const isDemoMode = !isFirebaseAvailableByConfig || (user?.uid?.startsWith('demo-') ?? true);
+      const isDemoMode = !isBackendAvailable || (user?.uid?.startsWith('demo-') ?? true);
       try {
         if (isDemoMode) {
           throw new Error("Local Demo Mode Active");
@@ -997,7 +995,7 @@ export function DashboardView({
               reviewCount: 3,
               createdAt: new Date().toISOString(),
               verificationDocs: [
-                { id: 'doc1', name: 'CNI_Marie_Kouassi.pdf', type: 'id_card', status: 'approved', comment: 'Validé avec succès par l\'admin' }
+                { id: 'doc1', name: 'CNI_Marie_Kouassi.pdf', type: 'cni_passport', status: 'approved', comment: 'Validé avec succès par l\'admin' }
               ]
             }
           ]);
@@ -1024,7 +1022,7 @@ export function DashboardView({
 
   const viewCandidate = async (candidateId: string, app?: Application) => {
     try {
-      const isDemo = !isFirebaseAvailableByConfig || (user?.uid?.startsWith('demo-') ?? true);
+      const isDemo = !isBackendAvailable || (user?.uid?.startsWith('demo-') ?? true);
       if (isDemo) {
         throw new Error("Client Offline Mode");
       }
@@ -3282,7 +3280,7 @@ export function DashboardView({
                               const labelTranslation = 
                                  doc.type === 'cni_passport' ? "Carte Nationale d'Identité / Passeport" :
                                  doc.type === 'casier_judiciaire' ? "Casier Judiciaire (Bulletin N°3)" :
-                                 doc.type === 'facture_domicile' ? "Justificatif de Domicile (CIE / SODECI)" : doc.type;
+                                 doc.type === 'justificatif_domicile' ? "Justificatif de Domicile (CIE / SODECI)" : doc.type;
 
                               return (
                                  <div key={doc.type} className="bg-slate-50/50 p-5 rounded-3xl border border-slate-100 flex flex-col gap-4">

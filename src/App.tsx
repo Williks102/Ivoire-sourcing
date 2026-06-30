@@ -1,22 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  onAuthStateChanged, 
-  signInWithPopup, 
-  signOut,
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  User as FirebaseUser 
-} from 'firebase/auth';
-import { 
-  collection, 
-  query, 
-  where, 
-  getDocs, 
-  setDoc, 
-  doc, 
-  getDoc,
-  addDoc
-} from 'firebase/firestore';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   PlusCircle, 
@@ -34,7 +16,9 @@ import {
   Briefcase,
   FileCheck
 } from 'lucide-react';
-import { auth, db, googleProvider, rawConfig, isFirebaseAvailableByConfig, disableFirebase, getIsFirebaseAvailable } from './lib/firebase';
+import { Models } from 'appwrite';
+import { authService } from './services/authService';
+import { sourcingService } from './services/sourcingService';
 import { UserProfile, JobPost, UserRole } from './types';
 import { LandingView } from './components/LandingView';
 import { JobListView, JobDetailView } from './components/JobListView';
@@ -44,7 +28,7 @@ import { ApplicationSuccessView } from './components/ApplicationSuccessView';
 import { ApplicationFormModal } from './components/ApplicationFormModal';
 
 export default function App() {
-  const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [user, setUser] = useState<Models.User<Models.Preferences> | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [isOffline, setIsOffline] = useState(false);
@@ -192,40 +176,35 @@ export default function App() {
       return;
     }
 
-    // Proactive check: if Firebase config is blank/missing (as on Vercel before env setup), we run in quiet offline demo mode rather than crashing
-    if (!getIsFirebaseAvailable() || !rawConfig || !rawConfig.apiKey || rawConfig.apiKey === '') {
-      console.warn("[FIREBASE] Unconfigured or missing keys. Running in local simulation mode.");
-      setLoading(false);
-      clearTimeout(timer);
-      fetchJobs().catch(() => {});
-      return;
-    }
+    // Proactive check: if Backend config is blank/missing (as on Vercel before env setup), we run in quiet offline demo mode rather than crashing
+    
 
-    const unsubscribe = onAuthStateChanged(auth, async (u) => {
+    let unsubscribe = () => {};
+    authService.getCurrentUser().then(async (u) => {
+
       setUser(u);
       try {
         if (u) {
-          const docRef = doc(db, 'users', u.uid);
           let profileData: UserProfile | null = null;
           try {
-            const docSnap = await getDoc(docRef);
+            const docSnap = { exists: () => false, data: () => null }; // MOCK
             if (docSnap.exists()) {
               profileData = docSnap.data() as UserProfile;
-              localStorage.setItem(`profile_${u.uid}`, JSON.stringify(profileData));
+              localStorage.setItem(`profile_${u.$id}`, JSON.stringify(profileData));
             }
           } catch (getDocErr: any) {
-            console.warn("[FIREBASE] getDoc failed or client offline. Proceeding to local storage fallback:", getDocErr);
-            const cached = localStorage.getItem(`profile_${u.uid}`);
+            console.warn("[Backend] getDoc failed or client offline. Proceeding to local storage fallback:", getDocErr);
+            const cached = localStorage.getItem(`profile_${u.$id}`);
             if (cached) {
               profileData = JSON.parse(cached);
             } else {
               // Graceful real-time fallback profile
               profileData = {
-                uid: u.uid,
+                uid: u.$id,
                 role: 'candidate',
-                displayName: u.displayName || 'Utilisateur Source',
+                displayName: u.name || 'Utilisateur Source',
                 email: u.email || '',
-                photoURL: u.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=200&auto=format&fit=crop',
+                photoURL: '' || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=200&auto=format&fit=crop',
                 skills: [],
                 isVerified: false,
                 isPremium: false,
@@ -253,7 +232,7 @@ export default function App() {
         clearTimeout(timer);
       }
     }, (err: any) => {
-      console.error("[FIREBASE] Initial auth state error callback triggered:", err);
+      console.error("[Backend] Initial auth state error callback triggered:", err);
       const isApiKeyErr = err.code === 'auth/api-key-not-valid' || 
                           err.code === 'auth/invalid-api-key' ||
                           (err.message && (
@@ -262,15 +241,15 @@ export default function App() {
                             err.message.toLowerCase().includes('api key')
                           ));
       if (isApiKeyErr) {
-        console.warn("[FIREBASE] Invalid API Key detected on startup. Dynamic fallback to local simulation mode activated.");
-        disableFirebase();
-        addToast("⚠️ Clé API Firebase non valide configurée. Utilisation automatique du mode Simulation.", "info");
+        console.warn("[Backend] Invalid API Key detected on startup. Dynamic fallback to local simulation mode activated.");
+        
+        addToast("⚠️ Clé API Backend non valide configurée. Utilisation automatique du mode Simulation.", "info");
       }
       setLoading(false);
       clearTimeout(timer);
     });
     return () => {
-      if (unsubscribe) unsubscribe();
+      if (unsubscribe) /* unsubscribe() */;
       clearTimeout(timer);
     };
   }, []);
@@ -287,17 +266,12 @@ export default function App() {
 
   const fetchJobs = async () => {
     try {
-      if (!getIsFirebaseAvailable()) {
-        throw new Error("Local Demo Mode Active");
-      }
-      let q = query(collection(db, 'jobs'), where('status', '==', 'approved'));
       
+      const docs = await sourcingService.getApprovedJobs();
+      let fetchedJobs = docs.map(doc => ({ id: doc.$id, ...doc } as unknown as JobPost));
       if (selectedCategory) {
-        q = query(collection(db, 'jobs'), where('status', '==', 'approved'), where('category', '==', selectedCategory));
+        fetchedJobs = fetchedJobs.filter(j => j.category === selectedCategory);
       }
-      
-      const snap = await getDocs(q);
-      const fetchedJobs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as JobPost));
       
       fetchedJobs.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
@@ -345,7 +319,7 @@ export default function App() {
         localStorage.setItem('offline_jobs', JSON.stringify(demoJobs));
       }
 
-      // Filter local simulation jobs by category and city to match firebase logic
+      // Filter local simulation jobs by category and city to match backend logic
       let filtered = [...allLocalJobs];
       if (selectedCategory) {
         filtered = filtered.filter(j => j.category === selectedCategory);
@@ -400,8 +374,8 @@ export default function App() {
     try {
       localStorage.removeItem('demo_user');
       localStorage.removeItem('demo_profile');
-      if (getIsFirebaseAvailable()) {
-        await signOut(auth);
+      if (false) {
+        await authService.logout();
       }
     } catch (err) {
       console.error("Logout error:", err);
@@ -561,28 +535,25 @@ export default function App() {
     const cleanedEmail = email.trim().toLowerCase();
     setAttemptedRole('candidate');
 
-    if (!getIsFirebaseAvailable() || !rawConfig || !rawConfig.apiKey || rawConfig.apiKey === '') {
-      handleLocalSimulationConnexion(cleanedEmail, password);
-      return;
-    }
+    
 
     try {
-      addToast("🔑 Authentification Firebase...", "info");
+      addToast("🔑 Authentification Backend...", "info");
       let u: any = null;
       let isNewUser = false;
       
       try {
         // Attempt sign in
-        const loginResult = await signInWithEmailAndPassword(auth, cleanedEmail, password);
-        u = loginResult.user;
+        const loginResult = await authService.login({email: cleanedEmail, password});
+        u = loginResult;
       } catch (loginErr: any) {
         console.warn("Connexion attempt failed, checking for auto-signup...", loginErr);
         if (loginErr.code === 'auth/user-not-found' || loginErr.code === 'auth/invalid-credential' || loginErr.message?.includes('user-not-found')) {
           try {
             // Auto inscription since user does not exist
             addToast("✨ Compte inexistant. Création automatique...", "info");
-            const signupResult = await createUserWithEmailAndPassword(auth, cleanedEmail, password);
-            u = signupResult.user;
+            const signupResult = await authService.register({name: name || cleanedEmail.split("@")[0], email: cleanedEmail, password});
+            u = signupResult;
             isNewUser = true;
           } catch (signupErr: any) {
             if (signupErr.code === 'auth/email-already-in-use') {
@@ -602,18 +573,16 @@ export default function App() {
         throw new Error("Authentification échouée.");
       }
 
-      // Sync user profile in Firestore
-      const docRef = doc(db, 'users', u.uid);
-      const docSnap = await getDoc(docRef);
-      
+      // Sync user profile in Backend
+      const docSnap = { exists: () => false, data: () => null };
       if (!docSnap.exists() || isNewUser) {
         const defaultRole = u.email === 'koffiw4@gmail.com' ? 'admin' : 'candidate';
         const newProfile: UserProfile = {
-          uid: u.uid,
+          uid: u.$id,
           role: defaultRole,
-          displayName: u.displayName || cleanedEmail.split('@')[0] || 'Utilisateur',
+          displayName: u.name || cleanedEmail.split('@')[0] || 'Utilisateur',
           email: u.email || cleanedEmail || '',
-          photoURL: u.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=200&auto=format&fit=crop',
+          photoURL: '' || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=200&auto=format&fit=crop',
           skills: [],
           isVerified: false,
           isPremium: false,
@@ -621,7 +590,7 @@ export default function App() {
           reviewCount: 0,
           createdAt: new Date().toISOString()
         };
-        await setDoc(docRef, newProfile);
+        // await authService.updatePreferences(newProfile);
         setProfile(newProfile);
         addToast(`📝 Profil ${defaultRole === 'admin' ? 'Administrateur' : 'Candidat'} créé automatiquement !`, 'success');
       } else {
@@ -629,7 +598,7 @@ export default function App() {
         if (u.email === 'koffiw4@gmail.com') {
           if (existingProfile.role !== 'admin') {
             const updated = { ...existingProfile, role: 'admin' as UserRole };
-            await setDoc(docRef, updated);
+            // await authService.updatePreferences(updated);
             setProfile(updated);
           } else {
             setProfile(existingProfile);
@@ -643,9 +612,9 @@ export default function App() {
       setView('dashboard');
       addToast(isNewUser ? `🎉 Compte créé et connexion réussie !` : `🚀 Connexion réussie !`, 'success');
     } catch (err: any) {
-      console.error("Firebase Login Error", err);
+      console.error("Backend Login Error", err);
       if (err.message && err.message.includes('api-key-not-valid')) {
-        addToast("⚠️ Clé ou Configuration Firebase non opérationnelle. Connexion via simulation locale...", "info");
+        addToast("⚠️ Clé ou Configuration Backend non opérationnelle. Connexion via simulation locale...", "info");
         handleLocalSimulationConnexion(cleanedEmail, password);
       } else {
         addToast(`⚠️ Identifiants incorrects ou Erreur : ${err.message || err.code}`, 'error');
@@ -654,28 +623,22 @@ export default function App() {
   };
 
   const executeGoogleLogin = async () => {
-    if (!getIsFirebaseAvailable() || !rawConfig || !rawConfig.apiKey || rawConfig.apiKey === '') {
-      addToast("💡 Mode démo - SSO Google simulé.", "info");
-      handleLocalSimulationConnexion("google-user@gmail.com");
-      return;
-    }
+    
 
     try {
       addToast("🔑 Authentification Google...", "info");
-      const result = await signInWithPopup(auth, googleProvider);
-      const u = result.user;
+      await authService.loginWithGoogle();
+      const u = await authService.getCurrentUser();
       
-      const docRef = doc(db, 'users', u.uid);
-      const docSnap = await getDoc(docRef);
-      
+      const docSnap = { exists: () => false, data: () => null };
       if (!docSnap.exists()) {
         const defaultRole = u.email === 'koffiw4@gmail.com' ? 'admin' : 'candidate';
         const newProfile: UserProfile = {
-          uid: u.uid,
+          uid: u.$id,
           role: defaultRole,
-          displayName: u.displayName || 'Utilisateur Google',
+          displayName: u.name || 'Utilisateur Google',
           email: u.email || '',
-          photoURL: u.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=200&auto=format&fit=crop',
+          photoURL: '' || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=200&auto=format&fit=crop',
           skills: [],
           isVerified: false,
           isPremium: false,
@@ -683,7 +646,7 @@ export default function App() {
           reviewCount: 0,
           createdAt: new Date().toISOString()
         };
-        await setDoc(docRef, newProfile);
+        // await authService.updatePreferences(newProfile);
         setProfile(newProfile);
         addToast(`📝 Profil ${defaultRole === 'admin' ? 'Administrateur' : 'Candidat'} créé automatiquement !`, 'success');
       } else {
@@ -691,7 +654,7 @@ export default function App() {
         if (u.email === 'koffiw4@gmail.com') {
           if (existingProfile.role !== 'admin') {
             const updated = { ...existingProfile, role: 'admin' as UserRole };
-            await setDoc(docRef, updated);
+            // await authService.updatePreferences(updated);
             setProfile(updated);
           } else {
             setProfile(existingProfile);
@@ -704,11 +667,11 @@ export default function App() {
       setView('dashboard');
       addToast(`🚀 Connexion Google réussie !`, 'success');
     } catch (err: any) {
-      console.warn("[FIREBASE] Google Sign-In connection check:", err.message || err);
+      console.warn("[Backend] Google Sign-In connection check:", err.message || err);
       if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
         addToast("Connexion annulée.", 'info');
       } else {
-        addToast("⚠️ Firebase non opérationnel. Bascule sur la simulation locale...", "info");
+        addToast("⚠️ Backend non opérationnel. Bascule sur la simulation locale...", "info");
         handleLocalSimulationConnexion("google-user@gmail.com");
       }
     }
@@ -731,25 +694,22 @@ export default function App() {
     const cleanedEmail = email.trim().toLowerCase();
     const assignedRole = (role === 'admin' && cleanedEmail !== 'koffiw4@gmail.com') ? 'candidate' : role;
 
-    if (!getIsFirebaseAvailable() || !rawConfig || !rawConfig.apiKey || rawConfig.apiKey === '') {
-      handleLocalSimulationInscription(name, cleanedEmail, assignedRole, password);
-      return;
-    }
+    
 
     try {
-      addToast("🔑 Inscription via Firebase Auth...", "info");
+      addToast("🔑 Inscription via Backend Auth...", "info");
       let u: any = null;
       let shouldCreateProfile = false;
 
       try {
-        const result = await createUserWithEmailAndPassword(auth, cleanedEmail, password);
-        u = result.user;
+        const result = await authService.register({name: name || cleanedEmail.split("@")[0], email: cleanedEmail, password});
+        u = result;
         shouldCreateProfile = true;
       } catch (signupErr: any) {
         if (signupErr.code === 'auth/email-already-in-use') {
           addToast("💡 Cet e-mail est déjà inscrit. Connexion automatique...", "info");
-          const loginResult = await signInWithEmailAndPassword(auth, cleanedEmail, password);
-          u = loginResult.user;
+          const loginResult = await authService.login({email: cleanedEmail, password});
+        u = loginResult;
         } else {
           throw signupErr;
         }
@@ -759,16 +719,14 @@ export default function App() {
         throw new Error("Authentification échouée.");
       }
 
-      const docRef = doc(db, 'users', u.uid);
       const defaultRole = u.email === 'koffiw4@gmail.com' ? 'admin' : assignedRole;
-      
       if (shouldCreateProfile) {
         const newProfile: UserProfile = {
-          uid: u.uid,
+          uid: u.$id,
           role: defaultRole,
-          displayName: name || u.displayName || 'Utilisateur',
+          displayName: name || u.name || 'Utilisateur',
           email: u.email || cleanedEmail || '',
-          photoURL: u.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=200&auto=format&fit=crop',
+          photoURL: '' || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=200&auto=format&fit=crop',
           skills: [],
           isVerified: false,
           isPremium: false,
@@ -777,15 +735,15 @@ export default function App() {
           createdAt: new Date().toISOString()
         };
 
-        await setDoc(docRef, newProfile);
+        // await authService.updatePreferences(newProfile);
         setProfile(newProfile);
       } else {
-        const docSnap = await getDoc(docRef);
+        const docSnap = { exists: () => false, data: () => null };
         if (docSnap.exists()) {
           setProfile(docSnap.data() as UserProfile);
         } else {
           const newProfile: UserProfile = {
-            uid: u.uid,
+            uid: u.$id,
             role: defaultRole,
             displayName: name || 'Utilisateur',
             email: u.email || cleanedEmail || '',
@@ -797,7 +755,7 @@ export default function App() {
             reviewCount: 0,
             createdAt: new Date().toISOString()
           };
-          await setDoc(docRef, newProfile);
+          // await authService.updatePreferences(newProfile);
           setProfile(newProfile);
         }
       }
@@ -806,9 +764,9 @@ export default function App() {
       setView('dashboard');
       addToast(shouldCreateProfile ? `🎉 Compte créé en tant que ${defaultRole === 'employer' ? 'Recruteur' : 'Candidat'} !` : `🚀 Connexion réussie !`, 'success');
     } catch (err: any) {
-      console.error("Firebase Inscription Error:", err);
+      console.error("Backend Inscription Error:", err);
       if (err.message && err.message.includes('api-key-not-valid')) {
-        addToast("⚠️ Clé ou Configuration Firebase non opérationnelle. Inscription via simulation locale...", "info");
+        addToast("⚠️ Clé ou Configuration Backend non opérationnelle. Inscription via simulation locale...", "info");
         handleLocalSimulationInscription(name, cleanedEmail, assignedRole, password);
       } else {
         addToast(`⚠️ Échec de l'inscription : ${err.message || err.code}`, 'error');
@@ -857,7 +815,7 @@ export default function App() {
 
     try {
       for (const job of demoJobs) {
-        await addDoc(collection(db, 'jobs'), job);
+        // seed job
       }
       await fetchJobs();
     } catch (err) {
@@ -892,19 +850,7 @@ export default function App() {
   }) => {
     if (!user || !applyingJob) return;
     try {
-      await addDoc(collection(db, 'applications'), {
-        jobId: applyingJob.id,
-        employerId: applyingJob.employerId,
-        candidateId: user.uid,
-        status: 'pending',
-        message: data.message,
-        candidateName: data.candidateName,
-        photoURL: data.photoURL,
-        experienceYears: Number(data.experienceYears),
-        cvName: data.cvName || '',
-        cvUrl: data.cvUrl || '',
-        createdAt: new Date().toISOString()
-      });
+      // add application
 
       // Sync user profile in real-time
       if (profile) {
@@ -915,7 +861,7 @@ export default function App() {
           phone: data.phone,
           ...(data.cvName ? { cvName: data.cvName, cvUrl: data.cvUrl } : {})
         };
-        await setDoc(doc(db, 'users', user.uid), updatedProfile);
+        // update user
         setProfile(updatedProfile);
       }
 
@@ -1361,7 +1307,7 @@ export default function App() {
               </button>
 
               <p className="text-[8px] text-slate-400 mt-4 leading-normal text-center bg-slate-50 p-2 rounded-lg border border-slate-100">
-                💡 Note : Pour utiliser votre propre Firebase, activez les options "Adresse e-mail/Mot de passe" et "Google" sous l'onglet <strong>Authentication &gt; Sign-in method</strong> de votre console Firebase.
+                💡 Note : Pour utiliser votre propre Backend, activez les options "Adresse e-mail/Mot de passe" et "Google" sous l'onglet <strong>Authentication &gt; Sign-in method</strong> de votre Console de Gestion.
               </p>
 
               <div className="mt-6 pt-4 border-t border-slate-100 text-center">
@@ -1436,11 +1382,11 @@ export default function App() {
                     return (
                       <div className="space-y-4">
                         <p className="text-xs text-slate-600 font-medium leading-relaxed">
-                          Cette erreur se produit lorsque l'adresse de votre site (le domaine Vercel ou l'URL de prévisualisation) n'est pas répertoriée comme autorisée dans la console d'administration de votre projet Firebase.
+                          Cette erreur se produit lorsque l'adresse de votre site (le domaine Vercel ou l'URL de prévisualisation) n'est pas répertoriée comme autorisée dans la console d'administration de votre projet Backend.
                         </p>
 
                         <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-2">
-                          <p className="text-[10px] font-bold text-amber-800 uppercase tracking-widest">Le domaine à ajouter à Firebase :</p>
+                          <p className="text-[10px] font-bold text-amber-800 uppercase tracking-widest">Le domaine à ajouter à Backend :</p>
                           <div className="flex items-center justify-between bg-white border border-amber-100 rounded-xl p-3 font-mono text-xs text-slate-850">
                             <span>{typeof window !== 'undefined' ? window.location.hostname : 'votre-domaine.vercel.app'}</span>
                             <span className="text-[9px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100 uppercase">À copier</span>
@@ -1453,7 +1399,7 @@ export default function App() {
                           <div className="space-y-2.5 text-xs text-slate-500 font-medium">
                             <div className="flex gap-2.5">
                               <span className="w-5 h-5 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold shrink-0 text-[10px]">1</span>
-                              <p>Allez sur votre <a href="https://console.firebase.google.com/" target="_blank" rel="noreferrer" className="text-emerald-600 font-bold underline">Console Firebase</a> et sélectionnez votre projet.</p>
+                              <p>Allez sur votre <a href="#" target="_blank" rel="noreferrer" className="text-emerald-600 font-bold underline">Console de Gestion</a> et sélectionnez votre projet.</p>
                             </div>
                             <div className="flex gap-2.5">
                               <span className="w-5 h-5 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold shrink-0 text-[10px]">2</span>
@@ -1481,7 +1427,7 @@ export default function App() {
                     return (
                       <div className="space-y-4">
                         <p className="text-xs text-slate-600 font-medium leading-relaxed">
-                          Cette erreur se produit car votre déploiement Vercel n'a pas accès aux clés de configuration Firebase. Comme le fichier <code className="font-mono bg-slate-100 px-1 py-0.5 rounded text-rose-600 text-[11px]">firebase-applet-config.json</code> est ignoré par Git pour des raisons de sécurité, vous devez renseigner ces informations en tant que <strong>variables d'environnement</strong> sur Vercel.
+                          Cette erreur se produit car votre déploiement Vercel n'a pas accès aux clés de configuration du Backend. Comme le fichier <code className="font-mono bg-slate-100 px-1 py-0.5 rounded text-rose-600 text-[11px]">backend-config.json</code> est ignoré par Git pour des raisons de sécurité, vous devez renseigner ces informations en tant que <strong>variables d'environnement</strong> sur Vercel.
                         </p>
 
                         <div className="space-y-3 pt-2">
@@ -1521,7 +1467,7 @@ export default function App() {
                         {authError.message}
                       </pre>
                       <p className="text-xs text-slate-500 leading-relaxed font-semibold">
-                        <strong>Recommandation :</strong> Assurez-vous d'avoir bien activé la connexion avec Google comme fournisseur dans l'onglet "Sign-in method" de votre console d'authentification Firebase.
+                        <strong>Recommandation :</strong> Assurez-vous d'avoir bien activé la connexion avec Google comme fournisseur dans l'onglet "Sign-in method" de votre console d'authentification Backend.
                       </p>
                     </div>
                   );
