@@ -19,6 +19,7 @@ import {
 import { Models } from 'appwrite';
 import { authService } from './services/authService';
 import { sourcingService } from './services/sourcingService';
+import client, { APPWRITE_CONFIG } from './lib/appwrite';
 import { UserProfile, JobPost, UserRole } from './types';
 import { LandingView } from './components/LandingView';
 import { JobListView, JobDetailView } from './components/JobListView';
@@ -77,78 +78,39 @@ export default function App() {
     (window as any).addToast = addToast;
   }, []);
 
-  // Sockets Listener Setup
+  // Appwrite Realtime notification listener. Vercel serverless routes update Appwrite documents;
+  // this browser-to-Appwrite subscription replaces the former Express WebSocket bridge.
   useEffect(() => {
-    let ws: WebSocket;
-    let reconnectTimer: any;
+    if (!APPWRITE_CONFIG.DATABASE_ID) return;
 
-    function connect() {
-      try {
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${protocol}//${window.location.host}`;
-        ws = new WebSocket(wsUrl);
-
-        ws.onopen = () => {
-          console.log('[WS CLIENT] WebSocket connection successfully authorized.');
-        };
-
-        ws.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            if (data.type === 'action_validated') {
-              if (data.action === 'job_moderation_approved') {
-                addToast(`⚡ Annonce validée : "${data.payload.title}" est maintenant en ligne !`, 'success');
-                fetchJobs();
-              } else if (data.action === 'job_moderation_rejected') {
-                addToast(`⚠️ Annonce refusée par l'administrateur : ${data.payload.reason}`, 'error');
-              } else if (data.action === 'premium_payment_success') {
-                addToast(`💳 Boost Premium activé pour le recruteur !`, 'success');
-              } else if (data.action === 'certificate_approved') {
-                addToast(`🏆 Nouveau document de certification validé par l'admin !`, 'success');
-              } else if (data.action === 'candidate_certified') {
-                addToast(`🌟 Le profil candidat est maintenant certifié !`, 'success');
-              } else if (data.action === 'dashboard_action') {
-                addToast(`⚡ Action approuvée : ${data.payload.name}`, 'success');
-                fetchJobs();
-              }
-              
-              // Trigger a global custom event to allow nested views to react or sync lists
-              window.dispatchEvent(new CustomEvent('ws-action-validated', { detail: data }));
-            }
-          } catch (err) {
-            console.error('[WS CLIENT] Parse Error:', err);
-          }
-        };
-
-        ws.onclose = () => {
-          console.log('[WS CLIENT] Disconnected, reconnecting in 5s...');
-          reconnectTimer = setTimeout(connect, 5000);
-        };
-
-        ws.onerror = () => {
-          ws.close();
-        };
-      } catch (err) {
-        console.error('[WS CLIENT] Connection failed:', err);
+    const unsubscribeJobs = client.subscribe(
+      `databases.${APPWRITE_CONFIG.DATABASE_ID}.collections.jobs.documents`,
+      (event) => {
+        const payload = event.payload as any;
+        if (event.events.some(e => e.endsWith('.update')) && payload?.status === 'approved') {
+          addToast(`⚡ Annonce validée : "${payload.title || 'Nouvelle annonce'}" est maintenant en ligne !`, 'success');
+          fetchJobs();
+        }
+        if (event.events.some(e => e.endsWith('.update')) && payload?.isPremium) {
+          addToast('💳 Boost Premium activé pour le recruteur !', 'success');
+          fetchJobs();
+        }
       }
-    }
+    );
 
-    connect();
-
-    // Attach static trigger for anywhere in the application
-    (window as any).triggerSocketAction = (action: string, payload: any) => {
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({
-          type: 'action_validated',
-          action,
-          payload
-        }));
+    const unsubscribeUsers = client.subscribe(
+      `databases.${APPWRITE_CONFIG.DATABASE_ID}.collections.users.documents`,
+      (event) => {
+        const payload = event.payload as any;
+        if (event.events.some(e => e.endsWith('.update')) && payload?.isVerified) {
+          addToast('🌟 Le profil candidat est maintenant certifié !', 'success');
+        }
       }
-    };
+    );
 
     return () => {
-      if (ws) ws.close();
-      clearTimeout(reconnectTimer);
+      unsubscribeJobs();
+      unsubscribeUsers();
     };
   }, []);
 
@@ -204,7 +166,7 @@ export default function App() {
                 role: 'candidate',
                 displayName: u.name || 'Utilisateur Source',
                 email: u.email || '',
-                photoURL: '' || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=200&auto=format&fit=crop',
+                photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=200&auto=format&fit=crop',
                 skills: [],
                 isVerified: false,
                 isPremium: false,
@@ -249,7 +211,7 @@ export default function App() {
       clearTimeout(timer);
     });
     return () => {
-      if (unsubscribe) /* unsubscribe() */;
+      unsubscribe();
       clearTimeout(timer);
     };
   }, []);
@@ -545,15 +507,15 @@ export default function App() {
       try {
         // Attempt sign in
         const loginResult = await authService.login({email: cleanedEmail, password});
-        u = loginResult;
+        u = loginResult.user;
       } catch (loginErr: any) {
         console.warn("Connexion attempt failed, checking for auto-signup...", loginErr);
         if (loginErr.code === 'auth/user-not-found' || loginErr.code === 'auth/invalid-credential' || loginErr.message?.includes('user-not-found')) {
           try {
             // Auto inscription since user does not exist
             addToast("✨ Compte inexistant. Création automatique...", "info");
-            const signupResult = await authService.register({name: name || cleanedEmail.split("@")[0], email: cleanedEmail, password});
-            u = signupResult;
+            const signupResult = await authService.register({name: cleanedEmail.split("@")[0], email: cleanedEmail, password});
+            u = signupResult.user;
             isNewUser = true;
           } catch (signupErr: any) {
             if (signupErr.code === 'auth/email-already-in-use') {
@@ -582,7 +544,7 @@ export default function App() {
           role: defaultRole,
           displayName: u.name || cleanedEmail.split('@')[0] || 'Utilisateur',
           email: u.email || cleanedEmail || '',
-          photoURL: '' || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=200&auto=format&fit=crop',
+          photoURL: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=200&auto=format&fit=crop',
           skills: [],
           isVerified: false,
           isPremium: false,
@@ -638,7 +600,7 @@ export default function App() {
           role: defaultRole,
           displayName: u.name || 'Utilisateur Google',
           email: u.email || '',
-          photoURL: '' || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=200&auto=format&fit=crop',
+          photoURL: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=200&auto=format&fit=crop',
           skills: [],
           isVerified: false,
           isPremium: false,
@@ -702,14 +664,14 @@ export default function App() {
       let shouldCreateProfile = false;
 
       try {
-        const result = await authService.register({name: name || cleanedEmail.split("@")[0], email: cleanedEmail, password});
-        u = result;
+        const result = await authService.register({name: cleanedEmail.split("@")[0], email: cleanedEmail, password});
+        u = result.user;
         shouldCreateProfile = true;
       } catch (signupErr: any) {
         if (signupErr.code === 'auth/email-already-in-use') {
           addToast("💡 Cet e-mail est déjà inscrit. Connexion automatique...", "info");
           const loginResult = await authService.login({email: cleanedEmail, password});
-        u = loginResult;
+        u = loginResult.user;
         } else {
           throw signupErr;
         }
@@ -726,7 +688,7 @@ export default function App() {
           role: defaultRole,
           displayName: name || u.name || 'Utilisateur',
           email: u.email || cleanedEmail || '',
-          photoURL: '' || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=200&auto=format&fit=crop',
+          photoURL: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=200&auto=format&fit=crop',
           skills: [],
           isVerified: false,
           isPremium: false,
@@ -846,11 +808,22 @@ export default function App() {
     phone: string;
     cvName?: string;
     cvUrl?: string;
+    cvFile?: File;
     message: string;
   }) => {
     if (!user || !applyingJob) return;
     try {
-      // add application
+      if (!data.cvFile) {
+        throw new Error('Veuillez joindre un CV avant de postuler.');
+      }
+      await sourcingService.submitApplication(applyingJob.id, user.$id, data.cvFile, {
+        employerId: applyingJob.employerId,
+        message: data.message,
+        candidateName: data.candidateName,
+        photoURL: data.photoURL,
+        experienceYears: data.experienceYears,
+        cvName: data.cvName
+      });
 
       // Sync user profile in real-time
       if (profile) {

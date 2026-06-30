@@ -24,7 +24,7 @@ import {
   FileText,
   UserCheck
 } from 'lucide-react';
-import { db, auth, doc, setDoc, getDoc, deleteDoc, collection, query, where, limit, getDocs, addDoc, signOut, onSnapshot, isBackendAvailable, getIsBackendAvailable, disableBackend, rawConfig, googleProvider } from '../lib/backend';
+import { db, auth, doc, setDoc, getDoc, deleteDoc, collection, query, where, limit, getDocs, signOut, getIsBackendAvailable } from '../lib/appwriteBackend';
 import { CATEGORIES, CITIES } from '../constants';
 import { JobPost, UserRole } from '../types';
 
@@ -219,14 +219,14 @@ export function LandingView({
   // Use only the real/fetched jobs list, with no flat static mock fallback
   const displayedJobs = jobs && jobs.length > 0 ? jobs.slice(0, 4) : [];
 
-  // Sourcing logic - fetch matching candidates from Firestore or fallback to local demo
+  // Sourcing logic - fetch matching candidates from Appwrite or fallback to local demo
   const handleSourcingSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoadingCandidates(true);
     setSearchTriggered(true);
 
     try {
-      // Try fetching real candidate profiles from Firestore users collection
+      // Try fetching real candidate profiles from Appwrite users collection
       const q = query(
         collection(db, 'users'), 
         where('role', '==', 'candidate'), 
@@ -264,7 +264,7 @@ export function LandingView({
 
       setCandidatesList(filtered);
     } catch (err) {
-      console.error("Firestore candidate fetch error:", err);
+      console.error("Appwrite candidate fetch error:", err);
       // fallback to offline matching
       const filtered = DEMO_CANDIDATES.filter(cand => {
         const matchesCategory = !selCategory || cand.category === selCategory;
@@ -335,7 +335,7 @@ export function LandingView({
         
         if (paiementPro.success && paiementPro.url) {
           setPaymentStatusMessage('Redirection vers la passerelle partenaire officielle...');
-          // Save a persistent unlock or state record in firestore first before redirecting so they have access
+          // Save a persistent unlock or state record in Appwrite first before redirecting so they have access
           const currentUser = auth.currentUser;
           if (currentUser && selectedProfile) {
             try {

@@ -26,7 +26,7 @@ import {
   Eye,
   Paperclip
 } from 'lucide-react';
-import { db, auth, doc, setDoc, getDoc, deleteDoc, collection, query, where, limit, getDocs, addDoc, signOut, onSnapshot, isBackendAvailable, getIsBackendAvailable, disableBackend, rawConfig, googleProvider } from '../lib/backend';
+import { db, auth, doc, setDoc, getDoc, deleteDoc, collection, query, where, limit, getDocs, signOut, getIsBackendAvailable } from '../lib/appwriteBackend';
 import { UserProfile, JobPost, Application, UserRole } from '../types';
 import { CITIES, CATEGORIES } from '../constants';
 import { OPERATORS_MAP, loadPaiementProScript } from './LandingView';
@@ -40,7 +40,7 @@ enum OperationType {
   WRITE = 'write',
 }
 
-interface FirestoreErrorInfo {
+interface AppwriteErrorInfo {
   error: string;
   operationType: OperationType;
   path: string | null;
@@ -50,8 +50,8 @@ interface FirestoreErrorInfo {
   }
 }
 
-function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  const errInfo: FirestoreErrorInfo = {
+function handleAppwriteError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: AppwriteErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
       userId: auth.currentUser?.uid,
@@ -60,7 +60,7 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
     operationType,
     path
   };
-  console.error('Firestore Error Details: ', JSON.stringify(errInfo));
+  console.error('Appwrite Error Details: ', JSON.stringify(errInfo));
   throw new Error(JSON.stringify(errInfo));
 }
 
@@ -233,7 +233,7 @@ export function DashboardView({
              newJobs[jId] = (snap.data() as JobPost).title;
              updated = true;
           } else {
-             throw new Error("Job not found in Firestore");
+             throw new Error("Job not found in Appwrite");
           }
         } catch (e) {
           // Resolve from offline storage / mock fallback
@@ -260,7 +260,7 @@ export function DashboardView({
              newNames[cId] = (snap.data() as UserProfile).displayName;
              updated = true;
           } else {
-             throw new Error("User not found in Firestore");
+             throw new Error("User not found in Appwrite");
           }
         } catch (e) {
           // Resolve from offline storage / application metadata / mock fallback
@@ -324,7 +324,7 @@ export function DashboardView({
         (window as any).triggerSocketAction('dashboard_action', { name: `Candidature mise à jour vers : ${newStatus}` });
       }
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `applications/${appId}`);
+      handleAppwriteError(err, OperationType.UPDATE, `applications/${appId}`);
     }
   };
 
@@ -391,7 +391,7 @@ export function DashboardView({
       setSuccessMsg('Votre profil a été mis à jour de manière sécurisée !');
       setTimeout(() => setSuccessMsg(''), 4000);
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `users/${user.uid}`);
+      handleAppwriteError(err, OperationType.UPDATE, `users/${user.uid}`);
     } finally {
       setUpdatingProfile(false);
     }
@@ -403,7 +403,7 @@ export function DashboardView({
     setIsSubmittingID(true);
     setVerificationFeedback('');
     try {
-      // Simulate ID verification submission by setting a flag in Firestore
+      // Simulate ID verification submission by setting a flag in Appwrite
       const updated: UserProfile = {
         ...profile,
         isVerified: false, // will require admin verification
@@ -422,7 +422,7 @@ export function DashboardView({
       setVerificationFeedback('Votre demande de certification a été transmise aux administrateurs avec succès !');
       setIdNumber('');
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `users/${user.uid}`);
+      handleAppwriteError(err, OperationType.UPDATE, `users/${user.uid}`);
     } finally {
       setIsSubmittingID(false);
     }
@@ -555,7 +555,7 @@ export function DashboardView({
         (window as any).triggerSocketAction('certificate_approved', { userId: viewingDocsUser.uid });
       }
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `users/${viewingDocsUser.uid}`);
+      handleAppwriteError(err, OperationType.UPDATE, `users/${viewingDocsUser.uid}`);
     }
   };
 
@@ -571,7 +571,7 @@ export function DashboardView({
       await setDoc(doc(db, 'users', viewingDocsUser.uid), { verificationDocs: updatedDocs }, { merge: true });
       setAllUsers(prev => prev.map(u => u.uid === viewingDocsUser.uid ? { ...u, verificationDocs: updatedDocs } : u));
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `users/${viewingDocsUser.uid}`);
+      handleAppwriteError(err, OperationType.UPDATE, `users/${viewingDocsUser.uid}`);
     }
   };
 
@@ -584,7 +584,7 @@ export function DashboardView({
       await setDoc(doc(db, 'users', viewingDocsUser.uid), { role: newRole }, { merge: true });
       setAllUsers(prev => prev.map(u => u.uid === viewingDocsUser.uid ? { ...u, role: newRole } : u));
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `users/${viewingDocsUser.uid}`);
+      handleAppwriteError(err, OperationType.UPDATE, `users/${viewingDocsUser.uid}`);
     }
   };
 
@@ -598,7 +598,7 @@ export function DashboardView({
         (window as any).triggerSocketAction('candidate_certified', { userId: targetUser.uid });
       }
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `users/${targetUser.uid}`);
+      handleAppwriteError(err, OperationType.UPDATE, `users/${targetUser.uid}`);
     }
   };
 
@@ -612,7 +612,7 @@ export function DashboardView({
         (window as any).triggerSocketAction('premium_payment_success', { userId: targetUser.uid });
       }
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `users/${targetUser.uid}`);
+      handleAppwriteError(err, OperationType.UPDATE, `users/${targetUser.uid}`);
     }
   };
 
@@ -641,7 +641,7 @@ export function DashboardView({
         (window as any).triggerSocketAction('job_moderation_rejected', { title: 'Annonce Modérée', reason: 'Non conforme' });
       }
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `jobs/${jobId}`);
+      handleAppwriteError(err, OperationType.UPDATE, `jobs/${jobId}`);
     }
   };
 
@@ -678,7 +678,7 @@ export function DashboardView({
           setConfirmation(null);
         } catch (err) {
           showNotification("Attribution insuffisante ou erreur lors de la suppression de l'offre.", "error");
-          handleFirestoreError(err, OperationType.DELETE, `jobs/${jobId}`);
+          handleAppwriteError(err, OperationType.DELETE, `jobs/${jobId}`);
         }
       }
     });
@@ -696,7 +696,7 @@ export function DashboardView({
           showNotification("La candidature a été supprimée avec succès.", "success");
         } catch (err) {
           showNotification("Attribution insuffisante ou erreur lors de la suppression de la candidature.", "error");
-          handleFirestoreError(err, OperationType.DELETE, `applications/${appId}`);
+          handleAppwriteError(err, OperationType.DELETE, `applications/${appId}`);
         }
       }
     });
@@ -714,7 +714,7 @@ export function DashboardView({
           showNotification("Le compte utilisateur a été supprimé avec succès.", "success");
         } catch (err) {
           showNotification("Attribution insuffisante ou erreur lors de la suppression de l'utilisateur.", "error");
-          handleFirestoreError(err, OperationType.DELETE, `users/${targetUid}`);
+          handleAppwriteError(err, OperationType.DELETE, `users/${targetUid}`);
         }
       }
     });
@@ -749,7 +749,7 @@ export function DashboardView({
       setIsAdminCreatingUser(false);
       alert("Membre créé avec succès !");
     } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, 'users');
+      handleAppwriteError(err, OperationType.CREATE, 'users');
     }
   };
 
@@ -781,7 +781,7 @@ export function DashboardView({
       setIsAdminCreatingJob(false);
       alert("Offre d'emploi créée avec succès !");
     } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, 'jobs');
+      handleAppwriteError(err, OperationType.CREATE, 'jobs');
     }
   };
 
@@ -832,7 +832,7 @@ export function DashboardView({
       showNotification("L'annonce d'emploi a été modifiée avec succès !", "success");
     } catch (err) {
       showNotification("Erreur lors de la modification de l'annonce d'emploi.", "error");
-      handleFirestoreError(err, OperationType.UPDATE, `jobs/${selectedManageJob.id}`);
+      handleAppwriteError(err, OperationType.UPDATE, `jobs/${selectedManageJob.id}`);
     }
   };
 
@@ -995,7 +995,7 @@ export function DashboardView({
               reviewCount: 3,
               createdAt: new Date().toISOString(),
               verificationDocs: [
-                { id: 'doc1', name: 'CNI_Marie_Kouassi.pdf', type: 'cni_passport', status: 'approved', comment: 'Validé avec succès par l\'admin' }
+                { name: 'CNI_Marie_Kouassi.pdf', type: 'cni_passport', status: 'approved', uploadedAt: new Date().toISOString() }
               ]
             }
           ]);
@@ -1036,7 +1036,7 @@ export function DashboardView({
       setSelectedCandidate(candidateData);
       setSelectedApplication(app || null);
     } catch (err) {
-      console.warn("Could not retrieve candidate document from real Firestore, using local fallback profile:", err);
+      console.warn("Could not retrieve candidate document from real Appwrite, using local fallback profile:", err);
       // Fallback profile using application context or localstorage users
       const localUsers = JSON.parse(localStorage.getItem('offline_users') || '[]');
       const foundUser = localUsers.find((u: any) => u.uid === candidateId);
@@ -1120,7 +1120,7 @@ export function DashboardView({
         
         if (paiementPro.success && paiementPro.url) {
           setPaymentStatusMessage('Redirection vers la passerelle partenaire officielle...');
-          // Save a persistent unlock or state record in firestore first before redirecting so they have access
+          // Save a persistent unlock or state record in Appwrite first before redirecting so they have access
           if (user && selectedCandidate) {
             try {
               if (chosenPlan === 'one-time') {
