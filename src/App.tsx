@@ -60,7 +60,22 @@ export default function App() {
   const [signupEmail, setSignupEmail] = useState('');
   const [signupPassword, setSignupPassword] = useState('');
   const [signupRole, setSignupRole] = useState<'candidate' | 'employer'>('candidate');
-  
+
+  // Mot de passe oublié
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [forgotPasswordEmail, setForgotPasswordEmail] = useState('');
+  const [sendingReset, setSendingReset] = useState(false);
+
+  // Finalisation de la réinitialisation (userId/secret reçus par email)
+  const [resetRecoveryParams, setResetRecoveryParams] = useState<{ userId: string; secret: string } | null>(null);
+  const [resetNewPassword, setResetNewPassword] = useState('');
+  const [resetConfirmPassword, setResetConfirmPassword] = useState('');
+  const [resettingPassword, setResettingPassword] = useState(false);
+  const [resetDone, setResetDone] = useState(false);
+
+  // Redirection post-connexion Google (pas de routeur : on relit un marqueur en query param)
+  const [pendingGoogleRedirect, setPendingGoogleRedirect] = useState(false);
+
   // Real-time toast notifications state
   const [toasts, setToasts] = useState<{ id: string; message: string; type: 'success' | 'info' | 'error' }[]>([]);
 
@@ -77,6 +92,74 @@ export default function App() {
   useEffect(() => {
     (window as any).addToast = addToast;
   }, []);
+
+  // Lit les query params une seule fois au chargement : lien de récupération de mot de passe
+  // (userId + secret ajoutés par Appwrite) ou marqueur de retour de connexion Google.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const recoveryUserId = params.get('userId');
+    const recoverySecret = params.get('secret');
+    if (recoveryUserId && recoverySecret) {
+      setResetRecoveryParams({ userId: recoveryUserId, secret: recoverySecret });
+      window.history.replaceState({}, '', window.location.pathname);
+    } else if (params.get('auth') === 'dashboard') {
+      setPendingGoogleRedirect(true);
+      window.history.replaceState({}, '', window.location.pathname);
+    } else if (params.get('auth') === 'failed') {
+      addToast("⚠️ La connexion Google a échoué.", 'error');
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
+
+  // Une fois la session Google résolue (profil chargé), on atterrit sur le dashboard.
+  useEffect(() => {
+    if (pendingGoogleRedirect && !loading && user) {
+      setView('dashboard');
+      setPendingGoogleRedirect(false);
+    }
+  }, [pendingGoogleRedirect, loading, user]);
+
+  const handleForgotPassword = async () => {
+    if (!forgotPasswordEmail.trim()) {
+      addToast("Renseigne ton adresse e-mail d'abord.", 'error');
+      return;
+    }
+    setSendingReset(true);
+    try {
+      await authService.requestPasswordReset(forgotPasswordEmail.trim());
+    } catch (err: any) {
+      // Ne jamais révéler si l'email correspond à un compte existant (énumération de comptes).
+      // On log pour nous-mêmes, mais l'utilisateur voit toujours le même message générique.
+      console.warn("[ForgotPassword]", err.message);
+    } finally {
+      addToast("📧 Si un compte existe avec cette adresse, un email de réinitialisation vient d'être envoyé.", 'success');
+      setShowForgotPassword(false);
+      setSendingReset(false);
+    }
+  };
+
+  const handleConfirmPasswordReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetRecoveryParams) return;
+    if (resetNewPassword.length < 8) {
+      addToast("Le mot de passe doit contenir au moins 8 caractères.", 'error');
+      return;
+    }
+    if (resetNewPassword !== resetConfirmPassword) {
+      addToast("Les deux mots de passe ne correspondent pas.", 'error');
+      return;
+    }
+    setResettingPassword(true);
+    try {
+      await authService.confirmPasswordReset(resetRecoveryParams.userId, resetRecoveryParams.secret, resetNewPassword);
+      setResetDone(true);
+      addToast("✅ Mot de passe réinitialisé, tu peux te reconnecter.", 'success');
+    } catch (err: any) {
+      addToast(`⚠️ ${err.message}`, 'error');
+    } finally {
+      setResettingPassword(false);
+    }
+  };
 
   // Sockets Listener Setup
   useEffect(() => {
@@ -744,32 +827,69 @@ export default function App() {
               </p>
 
               {/* Tabs */}
-              <div className="grid grid-cols-2 bg-slate-100 p-1 rounded-xl mb-5">
-                <button
-                  type="button"
-                  onClick={() => setModalActiveTab('login')}
-                  className={`py-2 px-3 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                    modalActiveTab === 'login'
-                      ? 'bg-white text-emerald-700 shadow-sm'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  🔑 Connexion
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setModalActiveTab('signup')}
-                  className={`py-2 px-3 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                    modalActiveTab === 'signup'
-                      ? 'bg-white text-emerald-700 shadow-sm'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  ✨ Inscription
-                </button>
-              </div>
+              {!showForgotPassword && (
+                <div className="grid grid-cols-2 bg-slate-100 p-1 rounded-xl mb-5">
+                  <button
+                    type="button"
+                    onClick={() => setModalActiveTab('login')}
+                    className={`py-2 px-3 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                      modalActiveTab === 'login'
+                        ? 'bg-white text-emerald-700 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    🔑 Connexion
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setModalActiveTab('signup')}
+                    className={`py-2 px-3 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                      modalActiveTab === 'signup'
+                        ? 'bg-white text-emerald-700 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    ✨ Inscription
+                  </button>
+                </div>
+              )}
 
-              {modalActiveTab === 'login' ? (
+              {showForgotPassword ? (
+                /* Mot de passe oublié */
+                <div className="space-y-4">
+                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                    Indique ton adresse e-mail, on t'envoie un lien pour choisir un nouveau mot de passe.
+                  </p>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                      Adresse e-mail
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      placeholder="exemple@email.com"
+                      value={forgotPasswordEmail}
+                      onChange={(e) => setForgotPasswordEmail(e.target.value)}
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 focus:border-emerald-500 focus:bg-white rounded-xl text-xs outline-none transition-all font-medium"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    disabled={sendingReset}
+                    onClick={handleForgotPassword}
+                    className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-wider transition-all shadow-md shadow-emerald-600/10 cursor-pointer disabled:opacity-60"
+                  >
+                    {sendingReset ? 'Envoi...' : 'Envoyer le lien'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowForgotPassword(false)}
+                    className="w-full text-[10px] text-slate-400 font-bold hover:text-slate-600 cursor-pointer"
+                  >
+                    ← Retour à la connexion
+                  </button>
+                </div>
+              ) : modalActiveTab === 'login' ? (
                 /* Connexion Form */
                 <form
                   onSubmit={(e) => {
@@ -804,6 +924,15 @@ export default function App() {
                       onChange={(e) => setLoginPassword(e.target.value)}
                       className="w-full px-4 py-3 bg-slate-50 border border-slate-200 focus:border-emerald-500 focus:bg-white rounded-xl text-xs outline-none transition-all font-medium"
                     />
+                    <div className="text-right pt-0.5">
+                      <button
+                        type="button"
+                        onClick={() => { setForgotPasswordEmail(loginEmail); setShowForgotPassword(true); }}
+                        className="text-[10px] text-emerald-600 font-bold hover:underline cursor-pointer"
+                      >
+                        Mot de passe oublié ?
+                      </button>
+                    </div>
                   </div>
 
                   <button
@@ -1143,6 +1272,77 @@ export default function App() {
                   </button>
                 </div>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Finalisation de la réinitialisation de mot de passe (lien reçu par email) */}
+      <AnimatePresence>
+        {resetRecoveryParams && (
+          <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md z-[220] flex items-end sm:items-center justify-center sm:p-4">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-t-[32px] sm:rounded-[32px] w-full max-w-sm p-6 md:p-8 shadow-2xl"
+            >
+              {resetDone ? (
+                <div className="text-center space-y-4">
+                  <div className="w-14 h-14 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center text-2xl mx-auto">✅</div>
+                  <h3 className="text-lg font-black text-slate-900">Mot de passe mis à jour</h3>
+                  <p className="text-xs text-slate-500 leading-relaxed">Tu peux maintenant te reconnecter avec ton nouveau mot de passe.</p>
+                  <button
+                    type="button"
+                    onClick={() => { setResetRecoveryParams(null); setResetDone(false); openGeneralLogin(); }}
+                    className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-wider transition-all cursor-pointer"
+                  >
+                    Se connecter
+                  </button>
+                </div>
+              ) : (
+                <form onSubmit={handleConfirmPasswordReset} className="space-y-4">
+                  <h3 className="text-lg font-black text-slate-900 text-center">Nouveau mot de passe</h3>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Nouveau mot de passe</label>
+                    <input
+                      type="password"
+                      required
+                      minLength={8}
+                      placeholder="••••••••"
+                      value={resetNewPassword}
+                      onChange={(e) => setResetNewPassword(e.target.value)}
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 focus:border-emerald-500 focus:bg-white rounded-xl text-xs outline-none transition-all font-medium"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Confirme le mot de passe</label>
+                    <input
+                      type="password"
+                      required
+                      minLength={8}
+                      placeholder="••••••••"
+                      value={resetConfirmPassword}
+                      onChange={(e) => setResetConfirmPassword(e.target.value)}
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 focus:border-emerald-500 focus:bg-white rounded-xl text-xs outline-none transition-all font-medium"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={resettingPassword}
+                    className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-wider transition-all cursor-pointer disabled:opacity-60"
+                  >
+                    {resettingPassword ? 'Validation...' : 'Valider le nouveau mot de passe'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setResetRecoveryParams(null)}
+                    className="w-full text-[10px] text-slate-400 font-bold hover:text-slate-600 cursor-pointer"
+                  >
+                    Annuler
+                  </button>
+                </form>
+              )}
             </motion.div>
           </div>
         )}

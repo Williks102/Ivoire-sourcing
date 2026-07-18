@@ -56,9 +56,10 @@ export const authService = {
    */
   async loginWithGoogle(): Promise<void> {
     try {
-      // Les URLs de redirection configurées dans ton tableau de bord Appwrite
-      const successUrl = `${window.location.origin}/dashboard`;
-      const failureUrl = `${window.location.origin}/login`;
+      // Pas de routeur dans l'app (App.tsx gère un état "view" en mémoire, pas des URLs) :
+      // on repasse par la racine avec un marqueur en query param, lu au boot par App.tsx.
+      const successUrl = `${window.location.origin}/?auth=dashboard`;
+      const failureUrl = `${window.location.origin}/?auth=failed`;
       
       // Crée la session OAuth2 (Appwrite gère la redirection automatiquement)
       await account.createOAuth2Session('google' as any, successUrl, failureUrl);
@@ -81,6 +82,31 @@ export const authService = {
       if (error.code === 401) return null;
       console.error("[AuthService] Erreur lors de la récupération de la session:", error);
       return null;
+    }
+  },
+
+  /**
+   * Envoie un email de réinitialisation de mot de passe. Le lien pointe vers la racine du
+   * site ; Appwrite y ajoute automatiquement `userId` et `secret` en query params.
+   */
+  async requestPasswordReset(email: string): Promise<void> {
+    try {
+      await account.createRecovery(email, `${window.location.origin}/`);
+    } catch (error: any) {
+      console.error("[AuthService] Échec de la demande de réinitialisation:", error);
+      throw new Error(error.message || "Impossible d'envoyer l'email de réinitialisation.");
+    }
+  },
+
+  /**
+   * Finalise la réinitialisation à partir du userId/secret reçus par email.
+   */
+  async confirmPasswordReset(userId: string, secret: string, password: string): Promise<void> {
+    try {
+      await account.updateRecovery(userId, secret, password);
+    } catch (error: any) {
+      console.error("[AuthService] Échec de la réinitialisation:", error);
+      throw new Error(error.message || "Impossible de réinitialiser le mot de passe. Le lien a peut-être expiré.");
     }
   },
 
