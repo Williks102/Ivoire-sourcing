@@ -24,7 +24,8 @@ import {
   FileText,
   UserCheck
 } from 'lucide-react';
-import { db, auth, doc, setDoc, getDoc, deleteDoc, collection, query, where, limit, getDocs, addDoc, signOut, onSnapshot, isBackendAvailable, getIsBackendAvailable, disableBackend, rawConfig, googleProvider } from '../lib/backend';
+import { userService } from '../services/userService';
+import { unlockService } from '../services/unlockService';
 import { CATEGORIES, CITIES } from '../constants';
 import { JobPost, UserRole } from '../types';
 
@@ -57,12 +58,11 @@ interface LandingViewProps {
   onSelectJob: (job: JobPost) => void;
   onViewAllJobs: () => void;
   onLogin: (role: UserRole) => Promise<void>;
-  onDemoLogin?: (role: UserRole) => void;
   user: any;
   profile: any;
 }
 
-interface LocalDemoCandidate {
+interface CandidateSearchResult {
   id: string;
   displayName: string;
   category: string;
@@ -75,111 +75,14 @@ interface LocalDemoCandidate {
   skills: string[];
 }
 
-const DEMO_CANDIDATES: LocalDemoCandidate[] = [
-  { 
-    id: 'demo-cand-1', 
-    displayName: 'Awa Koné', 
-    category: 'nounou', 
-    location: 'Abidjan', 
-    experienceYears: 3, 
-    averageRating: 4.8, 
-    photoURL: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=200&auto=format&fit=crop', 
-    phone: '+225 07 48 92 11 02', 
-    email: 'awa.kone@gmail.com',
-    skills: ['Garde d\'enfants', 'Cuisine de base', 'Premiers secours']
-  },
-  { 
-    id: 'demo-cand-2', 
-    displayName: 'Koffi Kouamé', 
-    category: 'chauffeur', 
-    location: 'Abidjan', 
-    experienceYears: 5, 
-    averageRating: 4.9, 
-    photoURL: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=200&auto=format&fit=crop', 
-    phone: '+225 05 55 12 34 89', 
-    email: 'koffi.chauffeur@gmail.com',
-    skills: ['Conduite défensive', 'Mécanique de base', 'Liaison aéroport']
-  },
-  { 
-    id: 'demo-cand-3', 
-    displayName: 'Mariam Diarrassouba', 
-    category: 'nounou', 
-    location: 'Yamoussoukro', 
-    experienceYears: 4, 
-    averageRating: 4.7, 
-    photoURL: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=200&auto=format&fit=crop', 
-    phone: '+225 01 02 03 04 05', 
-    email: 'mariam.d@gmail.com',
-    skills: ['Garde de jumeaux', 'Aide aux devoirs', 'Activités créatives']
-  },
-  { 
-    id: 'demo-cand-4', 
-    displayName: 'Yao Kouadio', 
-    category: 'cuisinier', 
-    location: 'Bouaké', 
-    experienceYears: 6, 
-    averageRating: 5.0, 
-    photoURL: 'https://images.unsplash.com/photo-1583394838336-acd977736f90?q=80&w=200&auto=format&fit=crop', 
-    phone: '+225 07 77 88 99 00', 
-    email: 'yao.chef@gmail.com',
-    skills: ['Cuisine Ivoirienne', 'Pâtisserie', 'Gestion des stocks']
-  },
-  { 
-    id: 'demo-cand-5', 
-    displayName: 'Alima Touré', 
-    category: 'boy', 
-    location: 'Abidjan', 
-    experienceYears: 2, 
-    averageRating: 4.6, 
-    photoURL: 'https://images.unsplash.com/photo-1531123897727-8f129e1688ce?q=80&w=200&auto=format&fit=crop', 
-    phone: '+225 05 08 19 20 44', 
-    email: 'alima.toure@gmail.com',
-    skills: ['Nettoyage à fond', 'Repassage', 'Entretien des textiles']
-  },
-];
-
-const FALLBACK_DEMO_JOBS: any[] = [
-  {
-    id: 'demo-1',
-    title: 'Nounou Plein Temps Couchée',
-    description: 'Recherche nounou chaleureuse et patiente pour s\'occuper d\'une petite fille de 18 mois à Cocody Angré. Tâches additionnelles: préparation des repas sains pour le bébé, rangement de sa chambre.',
-    category: 'nounou',
-    location: 'Abidjan',
-    salaryRange: '130 000',
-    isPremium: true,
-    createdAt: new Date().toISOString()
-  },
-  {
-    id: 'demo-2',
-    title: 'Chauffeur Privé de Direction',
-    description: 'Nous recherchons un chauffeur de confiance très ponctuel pour conduire un cadre de direction. Véhicule moderne automatique. Maîtrise parfaite de Vridi, Plateau et route de Bassam.',
-    category: 'chauffeur',
-    location: 'Abidjan',
-    salaryRange: '160 000',
-    isPremium: false,
-    createdAt: new Date().toISOString()
-  },
-  {
-    id: 'demo-3',
-    title: 'Aide-Ménagère de Confiance (Gouvernante de Foyer)',
-    description: 'Recherche gouvernante de maison à Yamoussoukro pour s\'occuper du nettoyage de fond, repassage et de la cuisine de spécialités ivoiriennes. Logement individuel décent fourni.',
-    category: 'boy',
-    location: 'Yamoussoukro',
-    salaryRange: '110 000',
-    isPremium: false,
-    createdAt: new Date().toISOString()
-  }
-];
-
-export function LandingView({ 
-  onSearch, 
+export function LandingView({
+  onSearch,
   jobs, 
-  onSelectJob, 
-  onViewAllJobs, 
-  onLogin, 
-  onDemoLogin,
-  user, 
-  profile 
+  onSelectJob,
+  onViewAllJobs,
+  onLogin,
+  user,
+  profile
 }: LandingViewProps) {
   // Navigation / Tab States
   const [roleTab, setRoleTab] = useState<'recruiter' | 'candidate'>('recruiter');
@@ -189,11 +92,11 @@ export function LandingView({
   const [selCity, setSelCity] = useState<string>('Abidjan');
   const [selExperience, setSelExperience] = useState<number>(1);
   const [searchTriggered, setSearchTriggered] = useState<boolean>(false);
-  const [candidatesList, setCandidatesList] = useState<LocalDemoCandidate[]>([]);
+  const [candidatesList, setCandidatesList] = useState<CandidateSearchResult[]>([]);
   const [loadingCandidates, setLoadingCandidates] = useState<boolean>(false);
 
   // Active Selected Profile & Payment checkout
-  const [selectedProfile, setSelectedProfile] = useState<LocalDemoCandidate | null>(null);
+  const [selectedProfile, setSelectedProfile] = useState<CandidateSearchResult | null>(null);
   const [checkoutStep, setCheckoutStep] = useState<'plans' | 'payment-method' | 'processing' | 'success'>('plans');
   const [chosenPlan, setChosenPlan] = useState<'one-time' | 'monthly'>('one-time');
   const [paymentOperator, setPaymentOperator] = useState<'wave' | 'orange' | 'mtn' | 'moov' | 'card'>('wave');
@@ -212,10 +115,6 @@ export function LandingView({
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  const [showAdminPinModal, setShowAdminPinModal] = useState<boolean>(false);
-  const [adminPinValue, setAdminPinValue] = useState<string>('');
-  const [adminPinError, setAdminPinError] = useState<string>('');
-
   // Use only the real/fetched jobs list, with no flat static mock fallback
   const displayedJobs = jobs && jobs.length > 0 ? jobs.slice(0, 4) : [];
 
@@ -226,36 +125,23 @@ export function LandingView({
     setSearchTriggered(true);
 
     try {
-      // Try fetching real candidate profiles from Firestore users collection
-      const q = query(
-        collection(db, 'users'), 
-        where('role', '==', 'candidate'), 
-        where('isVerified', '==', true),
-        limit(40)
-      );
-      const snap = await getDocs(q);
-      
-      let fetched: LocalDemoCandidate[] = snap.docs.map(doc => {
-        const d = doc.data();
-        return {
-          id: d.uid || doc.id,
-          displayName: d.displayName || 'Profil Vérifié',
-          category: d.skills?.[0]?.toLowerCase() || 'nounou', // safe estimate
-          location: d.location || 'Abidjan',
-          experienceYears: d.experienceYears !== undefined ? Number(d.experienceYears) : 2,
-          averageRating: d.averageRating || 4.5,
-          photoURL: d.photoURL || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=200&auto=format&fit=crop',
-          phone: d.phone || '+225 07 00 00 00 00',
-          email: d.email || 'candidat@ivoiresource.ci',
-          skills: d.skills || ['Nettoyage', 'Soin']
-        };
-      });
+      const verifiedCandidates = await userService.listVerifiedCandidates(40);
 
-      // Merge with default candidates to ensure results corresponding to selected criteria always exist beautifully
-      const merged = [...fetched, ...DEMO_CANDIDATES];
-      
+      const fetched: CandidateSearchResult[] = verifiedCandidates.map(d => ({
+        id: d.uid,
+        displayName: d.displayName || 'Profil Vérifié',
+        category: d.skills?.[0]?.toLowerCase() || 'nounou', // safe estimate
+        location: d.location || 'Abidjan',
+        experienceYears: 2,
+        averageRating: d.averageRating || 4.5,
+        photoURL: d.photoURL || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=200&auto=format&fit=crop',
+        phone: d.phone || '+225 07 00 00 00 00',
+        email: d.email || 'candidat@ivoiresource.ci',
+        skills: d.skills || ['Nettoyage', 'Soin']
+      }));
+
       // Apply filters client-side
-      const filtered = merged.filter(cand => {
+      const filtered = fetched.filter(cand => {
         const matchesCategory = !selCategory || cand.category.toLowerCase().includes(selCategory.toLowerCase());
         const matchesLocation = !selCity || cand.location.toLowerCase() === selCity.toLowerCase();
         const matchesExperience = cand.experienceYears >= selExperience;
@@ -264,15 +150,8 @@ export function LandingView({
 
       setCandidatesList(filtered);
     } catch (err) {
-      console.error("Firestore candidate fetch error:", err);
-      // fallback to offline matching
-      const filtered = DEMO_CANDIDATES.filter(cand => {
-        const matchesCategory = !selCategory || cand.category === selCategory;
-        const matchesLocation = !selCity || cand.location === selCity;
-        const matchesExperience = cand.experienceYears >= selExperience;
-        return matchesCategory && matchesLocation && matchesExperience;
-      });
-      setCandidatesList(filtered);
+      console.error("Erreur lors de la recherche de candidats:", err);
+      setCandidatesList([]);
     } finally {
       setLoadingCandidates(false);
       // Scroll to candidates section smoothly
@@ -308,7 +187,7 @@ export function LandingView({
       : 'Abonnement Mensuel Illimité - IvoireSource';
 
     const cleanPhone = phoneNumber ? phoneNumber.trim().replace(/\s+/g, '') : '0700000000';
-    const emailVal = profile?.email || auth.currentUser?.email || 'employeur@ivoiresource.ci';
+    const emailVal = profile?.email || user?.email || 'employeur@ivoiresource.ci';
     const fullName = profile?.displayName || 'Recruteur Ivoirien';
     const names = fullName.split(' ');
     const lastName = names[names.length - 1] || 'Recruteur';
@@ -335,22 +214,13 @@ export function LandingView({
         
         if (paiementPro.success && paiementPro.url) {
           setPaymentStatusMessage('Redirection vers la passerelle partenaire officielle...');
-          // Save a persistent unlock or state record in firestore first before redirecting so they have access
-          const currentUser = auth.currentUser;
-          if (currentUser && selectedProfile) {
+          // Save a persistent unlock or state record before redirecting so they have access
+          if (user && selectedProfile) {
             try {
               if (chosenPlan === 'one-time') {
-                const unlockId = `${currentUser.uid}_${selectedProfile.id}`;
-                await setDoc(doc(db, 'unlocks', unlockId), {
-                  id: unlockId,
-                  employerId: currentUser.uid,
-                  candidateId: selectedProfile.id,
-                  createdAt: new Date().toISOString()
-                });
+                await unlockService.unlockCandidate(user.$id, selectedProfile.id);
               } else if (chosenPlan === 'monthly') {
-                await setDoc(doc(db, 'users', currentUser.uid), {
-                  isPremium: true
-                }, { merge: true });
+                await userService.updateUserProfile(user.$id, { isPremium: true });
               }
             } catch (pErr) {
               console.warn('Failed pre-saving state:', pErr);
@@ -380,21 +250,12 @@ export function LandingView({
     }, 3200);
 
     setTimeout(async () => {
-      const currentUser = auth.currentUser;
-      if (currentUser && selectedProfile) {
+      if (user && selectedProfile) {
         try {
           if (chosenPlan === 'one-time') {
-            const unlockId = `${currentUser.uid}_${selectedProfile.id}`;
-            await setDoc(doc(db, 'unlocks', unlockId), {
-              id: unlockId,
-              employerId: currentUser.uid,
-              candidateId: selectedProfile.id,
-              createdAt: new Date().toISOString()
-            });
+            await unlockService.unlockCandidate(user.$id, selectedProfile.id);
           } else if (chosenPlan === 'monthly') {
-            await setDoc(doc(db, 'users', currentUser.uid), {
-              isPremium: true
-            }, { merge: true });
+            await userService.updateUserProfile(user.$id, { isPremium: true });
           }
         } catch (error) {
           console.error("Failed to persist real unlock/subscription record:", error);
@@ -1214,84 +1075,6 @@ export function LandingView({
           </div>
         )}
 
-        {showAdminPinModal && (
-          <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md z-[150] flex items-end sm:items-center justify-center sm:p-4">
-            <motion.div
-              initial={isMobile ? { y: "100%" } : { scale: 0.95, opacity: 0 }}
-              animate={isMobile ? { y: 0 } : { scale: 1, opacity: 1 }}
-              exit={isMobile ? { y: "100%" } : { scale: 0.95, opacity: 0 }}
-              transition={isMobile ? { type: "spring", damping: 25, stiffness: 220 } : undefined}
-              className="bg-slate-900 border border-slate-800 rounded-t-[32px] sm:rounded-[32px] w-full max-w-sm p-6 overflow-hidden shadow-2xl flex flex-col font-sans text-center relative max-h-[85vh] overflow-y-auto"
-            >
-              {isMobile && (
-                <div className="pt-1 pb-3 flex justify-center shrink-0">
-                  <div className="w-12 h-1.5 bg-slate-800 rounded-full" />
-                </div>
-              )}
-              <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-450 flex items-center justify-center text-xl mx-auto mb-4">
-                🔒
-              </div>
-              <h4 className="text-sm font-black text-rose-400 uppercase tracking-widest">
-                Accès Admin Sécurisé
-              </h4>
-              <p className="text-xs text-slate-400 mt-2 leading-relaxed">
-                Veuillez saisir le code confidentiel d'administration pour valider votre identité :
-              </p>
-
-              <form 
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  if (adminPinValue === '2026') {
-                    setShowAdminPinModal(false);
-                    onDemoLogin?.('admin');
-                  } else {
-                    setAdminPinError("Code confidentiel incorrect. Accès refusé.");
-                  }
-                }}
-                className="mt-6 space-y-4 text-left"
-              >
-                <div>
-                  <input
-                    type="password"
-                    required
-                    placeholder="••••••••"
-                    value={adminPinValue}
-                    onChange={(e) => {
-                      setAdminPinValue(e.target.value);
-                      setAdminPinError('');
-                    }}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-center text-lg tracking-widest font-black text-slate-200 outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 transition-all h-12"
-                  />
-                  {adminPinError && (
-                    <p className="text-[10px] text-red-500 font-bold mt-2 text-center uppercase tracking-wider">
-                      ⚠️ {adminPinError}
-                    </p>
-                  )}
-                </div>
-
-                <div className="flex gap-3 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowAdminPinModal(false);
-                      setAdminPinValue('');
-                      setAdminPinError('');
-                    }}
-                    className="flex-1 py-3 text-xs font-bold uppercase tracking-wider bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl transition-all cursor-pointer text-center"
-                  >
-                    Annuler
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex-1 py-3 text-xs font-bold uppercase tracking-wider bg-rose-600 hover:bg-rose-500 text-white rounded-xl transition-all shadow-lg shadow-rose-950/20 cursor-pointer text-center"
-                  >
-                    Déverrouiller
-                  </button>
-                </div>
-              </form>
-            </motion.div>
-          </div>
-        )}
       </AnimatePresence>
     </motion.div>
   );

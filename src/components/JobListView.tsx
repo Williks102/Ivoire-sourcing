@@ -14,7 +14,6 @@ interface JobListViewProps {
   canApply: boolean;
   onPostJob: () => void;
   isEmployer?: boolean;
-  onSeed: () => void;
   onSelectJob: (job: JobPost) => void;
 }
 
@@ -28,7 +27,6 @@ export function JobListView({
   canApply,
   onPostJob,
   isEmployer,
-  onSeed,
   onSelectJob
 }: JobListViewProps) {
   const [showFilters, setShowFilters] = useState(false);
@@ -89,14 +87,6 @@ export function JobListView({
               </button>
               
               <div className="flex gap-2">
-                {jobs.length === 0 && (
-                  <button 
-                    onClick={onSeed} 
-                    className="bg-emerald-50 text-emerald-700 px-4 py-2.5 rounded-xl text-xs font-bold hover:bg-emerald-100 transition-all border border-emerald-100 whitespace-nowrap"
-                  >
-                    Exemples
-                  </button>
-                )}
                 {isEmployer && (
                   <button onClick={onPostJob} className="bg-slate-900 text-white px-5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 hover:scale-105 transition-all whitespace-nowrap">
                     <PlusCircle className="h-4 w-4" /> Publier

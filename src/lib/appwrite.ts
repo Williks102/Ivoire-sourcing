@@ -5,9 +5,15 @@ import { Client, Account, Databases, Storage } from 'appwrite';
 // Idéale avec les variables d'environnement Vite pour ne pas exposer tes IDs publiquement
 export const APPWRITE_CONFIG = {
   ENDPOINT: import.meta.env.VITE_APPWRITE_ENDPOINT || 'https://cloud.appwrite.io/v1',
-  PROJECT_ID: import.meta.env.VITE_APPWRITE_PROJECT_ID || 'ton_project_id_ici',
-  DATABASE_ID: import.meta.env.VITE_APPWRITE_DATABASE_ID || 'ton_database_id_ici',
+  PROJECT_ID: import.meta.env.VITE_APPWRITE_PROJECT_ID,
+  DATABASE_ID: import.meta.env.VITE_APPWRITE_DATABASE_ID,
 };
+
+if (!APPWRITE_CONFIG.PROJECT_ID || !APPWRITE_CONFIG.DATABASE_ID) {
+  throw new Error(
+    "Configuration Appwrite manquante : VITE_APPWRITE_PROJECT_ID et VITE_APPWRITE_DATABASE_ID doivent être définies (fichier .env.local en local, variables d'environnement Vercel en production)."
+  );
+}
 
 // Initialisation unique du client Appwrite
 const client = new Client()

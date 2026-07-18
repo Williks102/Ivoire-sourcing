@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { UserProfile } from '../types';
+import { UserProfile, JobPost } from '../types';
 import { CITIES, CATEGORIES } from '../constants';
-import { databases, APPWRITE_CONFIG } from '../lib/appwrite';
-import { ID } from 'appwrite';
+import { jobService } from '../services/jobService';
 
 
 interface PostJobViewProps {
@@ -67,28 +66,18 @@ export function PostJobView({ onPosted, profile }: PostJobViewProps) {
         }
       }
 
-      const isDemoMode = profile.uid.startsWith('demo-');
-      const jobData = {
+      const jobData: Omit<JobPost, 'id'> = {
         ...formData,
         employerId: profile.uid,
         status: 'approved',
         createdAt: new Date().toISOString()
       };
 
-      if (isDemoMode) {
-        console.log("[SIMULATION] Saving job to localStorage");
-        const localJobs = JSON.parse(localStorage.getItem('offline_jobs') || '[]');
-        localJobs.push({ id: 'local-job-' + Math.random().toString(36).substring(7), ...jobData });
-        localStorage.setItem('offline_jobs', JSON.stringify(localJobs));
-        onPosted();
-        return;
-      }
-
-      await databases.createDocument(APPWRITE_CONFIG.DATABASE_ID, 'jobs', ID.unique(), jobData);
+      await jobService.createJob(jobData);
       onPosted();
     } catch (err: any) {
       console.error("Erreur lors de la création de l'annonce d'emploi:", err);
-      alert("Une erreur s'est produite lors de la publication de l'offre d'emploi sur Backend. Assurez-vous d'avoir configuré vos droits de base de données Backend et d'être connecté.");
+      alert("Une erreur s'est produite lors de la publication de l'offre d'emploi. Assurez-vous d'être bien connecté et réessayez.");
     } finally {
       setSubmitting(false);
     }

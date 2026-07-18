@@ -26,43 +26,15 @@ import {
   Eye,
   Paperclip
 } from 'lucide-react';
-import { db, auth, doc, setDoc, getDoc, deleteDoc, collection, query, where, limit, getDocs, addDoc, signOut, onSnapshot, isBackendAvailable, getIsBackendAvailable, disableBackend, rawConfig, googleProvider } from '../lib/backend';
+import { ID } from 'appwrite';
+import { userService } from '../services/userService';
+import { jobService } from '../services/jobService';
+import { applicationService } from '../services/applicationService';
+import { unlockService } from '../services/unlockService';
+import { documentService } from '../services/documentService';
 import { UserProfile, JobPost, Application, UserRole } from '../types';
 import { CITIES, CATEGORIES } from '../constants';
 import { OPERATORS_MAP, loadPaiementProScript } from './LandingView';
-
-enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
-
-interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: {
-    userId?: string | null;
-    email?: string | null;
-  }
-}
-
-function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-    },
-    operationType,
-    path
-  };
-  console.error('Firestore Error Details: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
-}
 
 interface DashboardViewProps {
   profile: UserProfile | null;
@@ -71,6 +43,7 @@ interface DashboardViewProps {
   setActiveTab: (tab: any) => void;
   onProfileUpdate: (p: UserProfile) => void;
   setView: (v: any) => void;
+  onLogout: () => void;
 }
 
 export function DashboardView({
@@ -79,9 +52,9 @@ export function DashboardView({
   activeTab,
   setActiveTab,
   onProfileUpdate,
-  setView
+  setView,
+  onLogout
 }: DashboardViewProps) {
-  const isBackendAvailable = getIsBackendAvailable();
   const [isMobile, setIsMobile] = useState<boolean>(false);
   useEffect(() => {
     const checkMobile = () => {
@@ -131,7 +104,7 @@ export function DashboardView({
   const [editLocation, setEditLocation] = useState(profile?.location || '');
   const [editSkills, setEditSkills] = useState<string[]>(profile?.skills || []);
   const [editPhone, setEditPhone] = useState(profile?.phone || '');
-  const [profileCvFile, setProfileCvFile] = useState<{ name: string; content?: string } | null>(
+  const [profileCvFile, setProfileCvFile] = useState<{ name: string; content?: string; file?: File } | null>(
     profile?.cvName ? { name: profile.cvName, content: profile.cvUrl } : null
   );
   const [isProfileCvDragging, setIsProfileCvDragging] = useState(false);
@@ -184,9 +157,9 @@ export function DashboardView({
   const [verificationFeedback, setVerificationFeedback] = useState('');
 
   // Real document upload states for Côte d'Ivoire Certification
-  const [cniFile, setCniFile] = useState<{ name: string; base64: string; size: string } | null>(null);
-  const [casierFile, setCasierFile] = useState<{ name: string; base64: string; size: string } | null>(null);
-  const [domicileFile, setDomicileFile] = useState<{ name: string; base64: string; size: string } | null>(null);
+  const [cniFile, setCniFile] = useState<{ name: string; base64: string; size: string; file: File } | null>(null);
+  const [casierFile, setCasierFile] = useState<{ name: string; base64: string; size: string; file: File } | null>(null);
+  const [domicileFile, setDomicileFile] = useState<{ name: string; base64: string; size: string; file: File } | null>(null);
 
   const [uploadSteps, setUploadSteps] = useState<{
     cni: 'idle' | 'uploading' | 'success';
@@ -201,10 +174,7 @@ export function DashboardView({
   const [zoomedFileUrl, setZoomedFileUrl] = useState<string | null>(null);
 
   // Dynamic relational cache for display names and job titles
-  const [resolvedJobs, setResolvedJobs] = useState<Record<string, string>>({
-    'system-0': 'Nounou Plein Temps (Cocody)',
-    'system-1': 'Chauffeur Professionnel VTC',
-  });
+  const [resolvedJobs, setResolvedJobs] = useState<Record<string, string>>({});
   const [resolvedNames, setResolvedNames] = useState<Record<string, string>>({});
 
   // Dynamic resolution background effect for IDs to names & titles
@@ -218,65 +188,24 @@ export function DashboardView({
       const newNames = { ...resolvedNames };
       let updated = false;
 
-      // Local fallback collections
-      const localJobs = JSON.parse(localStorage.getItem('offline_jobs') || '[]');
-      const localUsers = JSON.parse(localStorage.getItem('offline_users') || '[]');
-
       for (const jId of missingJobIds) {
         try {
-          const isDemo = !isBackendAvailable || (user?.uid?.startsWith('demo-') ?? true);
-          if (isDemo) {
-            throw new Error("Client Offline Mode");
-          }
-          const snap = await getDoc(doc(db, 'jobs', jId));
-          if (snap.exists()) {
-             newJobs[jId] = (snap.data() as JobPost).title;
-             updated = true;
-          } else {
-             throw new Error("Job not found in Firestore");
-          }
-        } catch (e) {
-          // Resolve from offline storage / mock fallback
-          const found = localJobs.find((j: any) => j.id === jId || j.jobId === jId);
-          if (found) {
-            newJobs[jId] = found.title;
-          } else if (jId === 'demo-0') {
-            newJobs[jId] = "Nounou Plein Temps (Cocody)";
-          } else {
-            newJobs[jId] = "Emploi de Maison Sourcing";
-          }
+          const job = await jobService.getJob(jId);
+          newJobs[jId] = job ? job.title : "Offre indisponible";
           updated = true;
+        } catch (e) {
+          console.error(`Erreur résolution de l'offre ${jId}:`, e);
         }
       }
 
       for (const cId of missingCandIds) {
         try {
-          const isDemo = !isBackendAvailable || (user?.uid?.startsWith('demo-') ?? true);
-          if (isDemo) {
-            throw new Error("Client Offline Mode");
-          }
-          const snap = await getDoc(doc(db, 'users', cId));
-          if (snap.exists()) {
-             newNames[cId] = (snap.data() as UserProfile).displayName;
-             updated = true;
-          } else {
-             throw new Error("User not found in Firestore");
-          }
-        } catch (e) {
-          // Resolve from offline storage / application metadata / mock fallback
+          const candidate = await userService.getUserProfile(cId);
           const foundApp = apps.find(app => app.candidateId === cId);
-          const foundUser = localUsers.find((u: any) => u.uid === cId);
-          
-          if (foundApp && foundApp.candidateName) {
-            newNames[cId] = foundApp.candidateName;
-          } else if (foundUser && foundUser.displayName) {
-            newNames[cId] = foundUser.displayName;
-          } else if (cId === 'demo-candidate-uid-123') {
-            newNames[cId] = "Marie Kouassi";
-          } else {
-            newNames[cId] = "Candidat de Confiance";
-          }
+          newNames[cId] = candidate?.displayName || foundApp?.candidateName || "Candidat";
           updated = true;
+        } catch (e) {
+          console.error(`Erreur résolution du candidat ${cId}:`, e);
         }
       }
 
@@ -302,29 +231,12 @@ export function DashboardView({
 
   const updateAppStatus = async (appId: string, newStatus: string) => {
     try {
-      const isDemoMode = !isBackendAvailable || (user?.uid?.startsWith('demo-') ?? true);
-      if (isDemoMode) {
-        const localApps = JSON.parse(localStorage.getItem('offline_applications') || '[]');
-        const idx = localApps.findIndex((a: any) => a.id === appId);
-        if (idx !== -1) {
-          localApps[idx].status = newStatus;
-          localStorage.setItem('offline_applications', JSON.stringify(localApps));
-        }
-        setApps(prev => prev.map(a => a.id === appId ? { ...a, status: newStatus as any } : a));
-        if (typeof (window as any).triggerSocketAction === 'function') {
-          (window as any).triggerSocketAction('dashboard_action', { name: `Candidature (Démo) mise à jour vers : ${newStatus}` });
-        }
-        return;
-      }
-
-      const path = `applications/${appId}`;
-      await setDoc(doc(db, 'applications', appId), { status: newStatus }, { merge: true });
+      await applicationService.updateApplicationStatus(appId, newStatus as Application['status']);
       setApps(prev => prev.map(a => a.id === appId ? { ...a, status: newStatus as any } : a));
-      if (typeof (window as any).triggerSocketAction === 'function') {
-        (window as any).triggerSocketAction('dashboard_action', { name: `Candidature mise à jour vers : ${newStatus}` });
-      }
+      showNotification(`Candidature mise à jour vers : ${newStatus}`, "success");
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `applications/${appId}`);
+      showNotification("Erreur lors de la mise à jour de la candidature.", "error");
+      console.error(err);
     }
   };
 
@@ -335,7 +247,8 @@ export function DashboardView({
       reader.onload = () => {
         setProfileCvFile({
           name: file.name,
-          content: reader.result as string
+          content: reader.result as string,
+          file
         });
       };
       reader.readAsDataURL(file);
@@ -351,7 +264,8 @@ export function DashboardView({
       reader.onload = () => {
         setProfileCvFile({
           name: file.name,
-          content: reader.result as string
+          content: reader.result as string,
+          file
         });
       };
       reader.readAsDataURL(file);
@@ -368,30 +282,30 @@ export function DashboardView({
     setUpdatingProfile(true);
     setSuccessMsg('');
     try {
-      const updated: UserProfile = {
-        ...profile,
+      let cvName = profile.cvName;
+      let cvUrl = profile.cvUrl;
+      if (profileCvFile?.file) {
+        const fileId = await documentService.uploadFile(profileCvFile.file);
+        cvName = profileCvFile.file.name;
+        cvUrl = documentService.getFileUrl(fileId);
+      }
+
+      const updated = await userService.updateUserProfile(user.$id, {
         displayName: editName,
         bio: editBio,
         location: editLocation,
         skills: editSkills,
         phone: editPhone,
-        cvName: profileCvFile ? profileCvFile.name : '',
-        cvUrl: profileCvFile ? profileCvFile.content : '',
-      };
-      const isDemoMode = !isBackendAvailable || (user?.uid?.startsWith('demo-') ?? true);
-      if (isDemoMode) {
-        localStorage.setItem('demo_profile', JSON.stringify(updated));
-        onProfileUpdate(updated);
-        setSuccessMsg('Votre profil (Démo) a été mis à jour de manière sécurisée !');
-        setTimeout(() => setSuccessMsg(''), 4000);
-        return;
-      }
-      await setDoc(doc(db, 'users', user.uid), updated);
+        cvName,
+        cvUrl,
+      });
       onProfileUpdate(updated);
       setSuccessMsg('Votre profil a été mis à jour de manière sécurisée !');
       setTimeout(() => setSuccessMsg(''), 4000);
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `users/${user.uid}`);
+      console.error(err);
+      setSuccessMsg('');
+      showNotification("Erreur lors de la mise à jour du profil.", "error");
     } finally {
       setUpdatingProfile(false);
     }
@@ -403,26 +317,16 @@ export function DashboardView({
     setIsSubmittingID(true);
     setVerificationFeedback('');
     try {
-      // Simulate ID verification submission by setting a flag in Firestore
-      const updated: UserProfile = {
-        ...profile,
+      const updated = await userService.updateUserProfile(user.$id, {
         isVerified: false, // will require admin verification
         bio: (profile.bio || '') + `\n[ID Soumise pour CNI/Passeport: N° ${idNumber}]`
-      };
-      const isDemoMode = !isBackendAvailable || (user?.uid?.startsWith('demo-') ?? true);
-      if (isDemoMode) {
-        localStorage.setItem('demo_profile', JSON.stringify(updated));
-        onProfileUpdate(updated);
-        setVerificationFeedback('Votre demande de certification (Démo) a été transmise aux administrateurs !');
-        setIdNumber('');
-        return;
-      }
-      await setDoc(doc(db, 'users', user.uid), updated);
+      });
       onProfileUpdate(updated);
       setVerificationFeedback('Votre demande de certification a été transmise aux administrateurs avec succès !');
       setIdNumber('');
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `users/${user.uid}`);
+      console.error(err);
+      setVerificationFeedback('Erreur lors de la transmission de votre demande. Veuillez réessayer.');
     } finally {
       setIsSubmittingID(false);
     }
@@ -448,7 +352,7 @@ export function DashboardView({
       const sizeStr = (file.size / (1024 * 1024)).toFixed(2) + " MB";
       
       setTimeout(() => {
-        const fileData = { name: file.name, base64, size: sizeStr };
+        const fileData = { name: file.name, base64, size: sizeStr, file };
         if (type === 'cni') setCniFile(fileData);
         if (type === 'casier') setCasierFile(fileData);
         if (type === 'domicile') setDomicileFile(fileData);
@@ -493,43 +397,27 @@ export function DashboardView({
     setVerificationSubmitFeedback('');
 
     try {
-      const docsToSave: any[] = [];
-      if (cniFile) {
+      const docsToSave: NonNullable<UserProfile['verificationDocs']> = [];
+      const filesToUpload: { file: File; name: string; type: 'cni_passport' | 'casier_judiciaire' | 'justificatif_domicile' }[] = [];
+      if (cniFile) filesToUpload.push({ file: cniFile.file, name: cniFile.name, type: 'cni_passport' });
+      if (casierFile) filesToUpload.push({ file: casierFile.file, name: casierFile.name, type: 'casier_judiciaire' });
+      if (domicileFile) filesToUpload.push({ file: domicileFile.file, name: domicileFile.name, type: 'justificatif_domicile' });
+
+      for (const item of filesToUpload) {
+        const fileId = await documentService.uploadFile(item.file);
         docsToSave.push({
-          name: cniFile.name,
-          type: 'cni_passport',
+          name: item.name,
+          type: item.type,
           status: 'pending',
           uploadedAt: new Date().toISOString(),
-          url: cniFile.base64
-        });
-      }
-      if (casierFile) {
-        docsToSave.push({
-          name: casierFile.name,
-          type: 'casier_judiciaire',
-          status: 'pending',
-          uploadedAt: new Date().toISOString(),
-          url: casierFile.base64
-        });
-      }
-      if (domicileFile) {
-        docsToSave.push({
-          name: domicileFile.name,
-          type: 'justificatif_domicile',
-          status: 'pending',
-          uploadedAt: new Date().toISOString(),
-          url: domicileFile.base64
+          url: documentService.getFileUrl(fileId)
         });
       }
 
-      // Merge verified state / fields
-      const updatedProfile = {
-        ...profile,
+      const updatedProfile = await userService.updateUserProfile(user.$id, {
         verificationDocs: docsToSave,
         isVerified: false
-      };
-
-      await setDoc(doc(db, 'users', user.uid), updatedProfile, { merge: true });
+      });
       onProfileUpdate(updatedProfile);
       setVerificationSubmitFeedback('Vos documents ont été transmis avec succès et sont en cours d’examen par l’équipe d’administration d’IvoireSource !');
     } catch (err) {
@@ -547,15 +435,12 @@ export function DashboardView({
       const updatedDocs = (viewingDocsUser.verificationDocs || []).map(d =>
         d.type === docType ? { ...d, status: 'approved' as const } : d
       );
-      const updatedUser = { ...viewingDocsUser, verificationDocs: updatedDocs };
-      setViewingDocsUser(updatedUser);
-      await setDoc(doc(db, 'users', viewingDocsUser.uid), { verificationDocs: updatedDocs }, { merge: true });
+      setViewingDocsUser({ ...viewingDocsUser, verificationDocs: updatedDocs });
+      await userService.updateUserProfile(viewingDocsUser.uid, { verificationDocs: updatedDocs });
       setAllUsers(prev => prev.map(u => u.uid === viewingDocsUser.uid ? { ...u, verificationDocs: updatedDocs } : u));
-      if (typeof (window as any).triggerSocketAction === 'function') {
-        (window as any).triggerSocketAction('certificate_approved', { userId: viewingDocsUser.uid });
-      }
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `users/${viewingDocsUser.uid}`);
+      showNotification("Erreur lors de l'approbation du document.", "error");
+      console.error(err);
     }
   };
 
@@ -566,12 +451,12 @@ export function DashboardView({
       const updatedDocs = (viewingDocsUser.verificationDocs || []).map(d =>
         d.type === docType ? { ...d, status: 'rejected' as const } : d
       );
-      const updatedUser = { ...viewingDocsUser, verificationDocs: updatedDocs };
-      setViewingDocsUser(updatedUser);
-      await setDoc(doc(db, 'users', viewingDocsUser.uid), { verificationDocs: updatedDocs }, { merge: true });
+      setViewingDocsUser({ ...viewingDocsUser, verificationDocs: updatedDocs });
+      await userService.updateUserProfile(viewingDocsUser.uid, { verificationDocs: updatedDocs });
       setAllUsers(prev => prev.map(u => u.uid === viewingDocsUser.uid ? { ...u, verificationDocs: updatedDocs } : u));
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `users/${viewingDocsUser.uid}`);
+      showNotification("Erreur lors du rejet du document.", "error");
+      console.error(err);
     }
   };
 
@@ -579,12 +464,12 @@ export function DashboardView({
   const changeUserRoleInReview = async (newRole: UserRole) => {
     if (!viewingDocsUser) return;
     try {
-      const updatedUser = { ...viewingDocsUser, role: newRole };
-      setViewingDocsUser(updatedUser);
-      await setDoc(doc(db, 'users', viewingDocsUser.uid), { role: newRole }, { merge: true });
+      setViewingDocsUser({ ...viewingDocsUser, role: newRole });
+      await userService.updateUserProfile(viewingDocsUser.uid, { role: newRole });
       setAllUsers(prev => prev.map(u => u.uid === viewingDocsUser.uid ? { ...u, role: newRole } : u));
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `users/${viewingDocsUser.uid}`);
+      showNotification("Erreur lors du changement de rôle.", "error");
+      console.error(err);
     }
   };
 
@@ -592,13 +477,11 @@ export function DashboardView({
   const toggleUserVerification = async (targetUser: UserProfile) => {
     try {
       const nextStatus = !targetUser.isVerified;
-      await setDoc(doc(db, 'users', targetUser.uid), { isVerified: nextStatus }, { merge: true });
+      await userService.updateUserProfile(targetUser.uid, { isVerified: nextStatus });
       setAllUsers(prev => prev.map(u => u.uid === targetUser.uid ? { ...u, isVerified: nextStatus } : u));
-      if (nextStatus && typeof (window as any).triggerSocketAction === 'function') {
-        (window as any).triggerSocketAction('candidate_certified', { userId: targetUser.uid });
-      }
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `users/${targetUser.uid}`);
+      showNotification("Erreur lors de la mise à jour de la certification.", "error");
+      console.error(err);
     }
   };
 
@@ -606,42 +489,23 @@ export function DashboardView({
   const toggleUserPremium = async (targetUser: UserProfile) => {
     try {
       const nextPremium = !targetUser.isPremium;
-      await setDoc(doc(db, 'users', targetUser.uid), { isPremium: nextPremium }, { merge: true });
+      await userService.updateUserProfile(targetUser.uid, { isPremium: nextPremium });
       setAllUsers(prev => prev.map(u => u.uid === targetUser.uid ? { ...u, isPremium: nextPremium } : u));
-      if (nextPremium && typeof (window as any).triggerSocketAction === 'function') {
-        (window as any).triggerSocketAction('premium_payment_success', { userId: targetUser.uid });
-      }
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `users/${targetUser.uid}`);
+      showNotification("Erreur lors de la mise à jour du statut premium.", "error");
+      console.error(err);
     }
   };
 
   // ADMIN CONTROLS: Moderate Job Post (Approve/Reject)
   const updateJobStatus = async (jobId: string, newStatus: 'approved' | 'rejected' | 'closed') => {
-    const isDemoMode = !isBackendAvailable || (user?.uid?.startsWith('demo-') ?? true);
     try {
-      if (isDemoMode) {
-        const localJobs = JSON.parse(localStorage.getItem('offline_jobs') || '[]');
-        const idx = localJobs.findIndex((j: any) => j.id === jobId);
-        if (idx !== -1) {
-          localJobs[idx].status = newStatus;
-          localStorage.setItem('offline_jobs', JSON.stringify(localJobs));
-        }
-        setMyJobs(prev => prev.map(j => j.id === jobId ? { ...j, status: newStatus } : j));
-        showNotification(`Le statut de l'offre a été mis à jour vers "${newStatus === 'approved' ? 'Approuvée' : 'Rejetée'}" (Démo)`, "success");
-        return;
-      }
-
-      await setDoc(doc(db, 'jobs', jobId), { status: newStatus }, { merge: true });
+      await jobService.updateJob(jobId, { status: newStatus });
       setMyJobs(prev => prev.map(j => j.id === jobId ? { ...j, status: newStatus } : j));
       showNotification(`Le statut de l'offre d'emploi a été mis à jour avec succès !`, "success");
-      if (newStatus === 'approved' && typeof (window as any).triggerSocketAction === 'function') {
-        (window as any).triggerSocketAction('job_moderation_approved', { title: 'Annonce Modérée' });
-      } else if (newStatus === 'rejected' && typeof (window as any).triggerSocketAction === 'function') {
-        (window as any).triggerSocketAction('job_moderation_rejected', { title: 'Annonce Modérée', reason: 'Non conforme' });
-      }
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `jobs/${jobId}`);
+      showNotification("Erreur lors de la mise à jour du statut de l'offre.", "error");
+      console.error(err);
     }
   };
 
@@ -660,25 +524,14 @@ export function DashboardView({
       title: "Supprimer l'offre",
       message: "Êtes-vous sûr de vouloir supprimer cette annonce définitivement ?",
       onConfirm: async () => {
-        const isDemoMode = !isBackendAvailable || (user?.uid?.startsWith('demo-') ?? true);
         try {
-          if (isDemoMode) {
-            const localJobs = JSON.parse(localStorage.getItem('offline_jobs') || '[]');
-            const updatedJobs = localJobs.filter((j: any) => j.id !== jobId);
-            localStorage.setItem('offline_jobs', JSON.stringify(updatedJobs));
-            setMyJobs(prev => prev.filter(j => j.id !== jobId));
-            showNotification("L'annonce d'emploi a été supprimée avec succès (Démo) !", "success");
-            setConfirmation(null);
-            return;
-          }
-
-          await deleteDoc(doc(db, 'jobs', jobId));
+          await jobService.deleteJob(jobId);
           setMyJobs(prev => prev.filter(j => j.id !== jobId));
           showNotification("L'offre d'emploi a été supprimée avec succès.", "success");
           setConfirmation(null);
         } catch (err) {
           showNotification("Attribution insuffisante ou erreur lors de la suppression de l'offre.", "error");
-          handleFirestoreError(err, OperationType.DELETE, `jobs/${jobId}`);
+          console.error(err);
         }
       }
     });
@@ -691,12 +544,12 @@ export function DashboardView({
       message: "Êtes-vous sûr de vouloir supprimer cette candidature de la plateforme ?",
       onConfirm: async () => {
         try {
-          await deleteDoc(doc(db, 'applications', appId));
+          await applicationService.deleteApplication(appId);
           setApps(prev => prev.filter(a => a.id !== appId));
           showNotification("La candidature a été supprimée avec succès.", "success");
         } catch (err) {
           showNotification("Attribution insuffisante ou erreur lors de la suppression de la candidature.", "error");
-          handleFirestoreError(err, OperationType.DELETE, `applications/${appId}`);
+          console.error(err);
         }
       }
     });
@@ -709,12 +562,12 @@ export function DashboardView({
       message: "Êtes-vous sûr de vouloir supprimer ce membre de la plateforme définitivement ?",
       onConfirm: async () => {
         try {
-          await deleteDoc(doc(db, 'users', targetUid));
+          await userService.deleteUserProfile(targetUid);
           setAllUsers(prev => prev.filter(u => u.uid !== targetUid));
           showNotification("Le compte utilisateur a été supprimé avec succès.", "success");
         } catch (err) {
           showNotification("Attribution insuffisante ou erreur lors de la suppression de l'utilisateur.", "error");
-          handleFirestoreError(err, OperationType.DELETE, `users/${targetUid}`);
+          console.error(err);
         }
       }
     });
@@ -728,9 +581,8 @@ export function DashboardView({
       return;
     }
     try {
-      const fakeUid = 'admin-user-' + Math.random().toString(36).substring(2, 11);
-      const newUserDoc: UserProfile = {
-        uid: fakeUid,
+      const newUid = ID.unique();
+      const newUserDoc = await userService.createUserProfile(newUid, {
         displayName: adminUserForm.displayName,
         email: adminUserForm.email,
         role: adminUserForm.role,
@@ -742,14 +594,14 @@ export function DashboardView({
         averageRating: 0,
         reviewCount: 0,
         createdAt: new Date().toISOString()
-      };
-      await setDoc(doc(db, 'users', fakeUid), newUserDoc);
+      }, false); // pas de vrai compte Appwrite Auth derrière cet uid généré
       setAllUsers(prev => [newUserDoc, ...prev]);
       setAdminUserForm({ displayName: '', email: '', role: 'candidate', isVerified: false, isPremium: false, bio: '', location: '' });
       setIsAdminCreatingUser(false);
-      alert("Membre créé avec succès !");
+      showNotification("Membre créé avec succès !", "success");
     } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, 'users');
+      showNotification("Erreur lors de la création du membre.", "error");
+      console.error(err);
     }
   };
 
@@ -761,9 +613,7 @@ export function DashboardView({
       return;
     }
     try {
-      const fakeJobId = 'admin-job-' + Math.random().toString(36).substring(2, 11);
-      const newJobDoc: JobPost & { id: string } = {
-        id: fakeJobId,
+      const newJobDoc = await jobService.createJob({
         employerId: adminJobForm.employerId || 'system',
         title: adminJobForm.title,
         description: adminJobForm.description,
@@ -773,15 +623,14 @@ export function DashboardView({
         status: 'approved',
         isPremium: adminJobForm.isPremium,
         createdAt: new Date().toISOString()
-      };
-      const { id, ...saveData } = newJobDoc;
-      await setDoc(doc(db, 'jobs', fakeJobId), saveData);
+      }, false); // employerId n'est pas forcément la session admin actuelle (ex: 'system')
       setMyJobs(prev => [newJobDoc, ...prev]);
       setAdminJobForm({ title: '', category: 'nounou', location: 'Abidjan', salaryRange: '', description: '', isPremium: false, employerId: 'system' });
       setIsAdminCreatingJob(false);
-      alert("Offre d'emploi créée avec succès !");
+      showNotification("Offre d'emploi créée avec succès !", "success");
     } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, 'jobs');
+      showNotification("Erreur lors de la création de l'offre d'emploi.", "error");
+      console.error(err);
     }
   };
 
@@ -801,217 +650,61 @@ export function DashboardView({
     e.preventDefault();
     if (!selectedManageJob || !user) return;
     try {
-      const isDemoMode = !isBackendAvailable || (user?.uid?.startsWith('demo-') ?? true);
-      const updatedJob: JobPost = {
-        ...selectedManageJob,
+      const updatedJob = await jobService.updateJob(selectedManageJob.id, {
         title: editJobForm.title,
         category: editJobForm.category as any,
         location: editJobForm.location,
         salaryRange: editJobForm.salaryRange,
         description: editJobForm.description,
-      };
-
-      if (isDemoMode) {
-        const localJobs = JSON.parse(localStorage.getItem('offline_jobs') || '[]');
-        const idx = localJobs.findIndex((j: any) => j.id === selectedManageJob.id);
-        if (idx !== -1) {
-          localJobs[idx] = updatedJob;
-          localStorage.setItem('offline_jobs', JSON.stringify(localJobs));
-        }
-        setMyJobs(prev => prev.map(j => j.id === selectedManageJob.id ? updatedJob : j));
-        setSelectedManageJob(null);
-        setIsEditingJob(false);
-        showNotification("L'annonce d'emploi (Démo) a été modifiée avec succès !", "success");
-        return;
-      }
-
-      await setDoc(doc(db, 'jobs', selectedManageJob.id), updatedJob);
+      });
       setMyJobs(prev => prev.map(j => j.id === selectedManageJob.id ? updatedJob : j));
       setSelectedManageJob(null);
       setIsEditingJob(false);
       showNotification("L'annonce d'emploi a été modifiée avec succès !", "success");
     } catch (err) {
       showNotification("Erreur lors de la modification de l'annonce d'emploi.", "error");
-      handleFirestoreError(err, OperationType.UPDATE, `jobs/${selectedManageJob.id}`);
+      console.error(err);
     }
   };
 
   useEffect(() => {
-    if (!user) return;
-    const checkProfile = async () => {
-      if (!profile) {
-        try {
-          const docRef = doc(db, 'users', user.uid);
-          const docSnap = await getDoc(docRef);
-          if (docSnap.exists()) {
-            const parsed = docSnap.data() as UserProfile;
-            onProfileUpdate(parsed);
-            localStorage.setItem(`profile_${user.uid}`, JSON.stringify(parsed));
-          }
-        } catch (err) {
-          console.warn("Delayed profile fetch failed or offline, accessing caching:", err);
-          const cached = localStorage.getItem(`profile_${user.uid}`);
-          if (cached) {
-            onProfileUpdate(JSON.parse(cached));
-          }
-        }
-      }
-    };
-    checkProfile();
-  }, [user, profile]);
-
-  useEffect(() => {
     if (!user || !profile) return;
-    
+
     const fetchData = async () => {
       setLoadingData(true);
-      const isDemoMode = !isBackendAvailable || (user?.uid?.startsWith('demo-') ?? true);
       try {
-        if (isDemoMode) {
-          throw new Error("Local Demo Mode Active");
-        }
-
         if (profile.role === 'admin') {
-          const qUsers = query(collection(db, 'users'), limit(100));
-          const snapUsers = await getDocs(qUsers);
-          setAllUsers(snapUsers.docs.map(d => d.data() as UserProfile));
-
-          const qJobs = query(collection(db, 'jobs'), limit(100));
-          const snapJobs = await getDocs(qJobs);
-          setMyJobs(snapJobs.docs.map(d => ({ id: d.id, ...d.data() } as JobPost)));
-
-          const qApps = query(collection(db, 'applications'), limit(100));
-          const snapApps = await getDocs(qApps);
-          setApps(snapApps.docs.map(d => ({ id: d.id, ...d.data() } as Application)));
+          const [users, allJobs, allApps] = await Promise.all([
+            userService.listUsers(100),
+            jobService.listAllJobs(100),
+            applicationService.listAllApplications(100)
+          ]);
+          setAllUsers(users);
+          setMyJobs(allJobs);
+          setApps(allApps);
         }
 
         if (profile.role === 'employer' && activeTab === 'browse-candidates') {
-          const qCand = query(collection(db, 'users'), where('role', '==', 'candidate'), limit(50));
-          const snapCand = await getDocs(qCand);
-          setCandidates(snapCand.docs.map(d => d.data() as UserProfile));
+          setCandidates(await userService.listCandidates(50));
         }
 
         if (profile.role === 'employer') {
-          const qJobs = query(collection(db, 'jobs'), where('employerId', '==', user.uid));
-          const snapJobs = await getDocs(qJobs);
-          setMyJobs(snapJobs.docs.map(d => ({ id: d.id, ...d.data() } as JobPost)));
-
-          const qApps = query(collection(db, 'applications'), where('employerId', '==', user.uid));
-          const snapApps = await getDocs(qApps);
-          setApps(snapApps.docs.map(d => ({ id: d.id, ...d.data() } as Application)));
-
-          const qUnlocks = query(collection(db, 'unlocks'), where('employerId', '==', user.uid));
-          const snapUnlocks = await getDocs(qUnlocks);
-          setUnlockedCandidateIds(snapUnlocks.docs.map(doc => doc.data().candidateId as string));
+          const [employerJobs, employerApps, unlockedIds] = await Promise.all([
+            jobService.listJobsByEmployer(user.$id),
+            applicationService.listApplicationsByEmployer(user.$id),
+            unlockService.listUnlockedCandidateIds(user.$id)
+          ]);
+          setMyJobs(employerJobs);
+          setApps(employerApps);
+          setUnlockedCandidateIds(unlockedIds);
         }
-        
+
         if (profile.role === 'candidate') {
-          const qApps = query(collection(db, 'applications'), where('candidateId', '==', user.uid));
-          const snapApps = await getDocs(qApps);
-          setApps(snapApps.docs.map(d => ({ id: d.id, ...d.data() } as Application)));
+          setApps(await applicationService.listApplicationsByCandidate(user.$id));
         }
       } catch (err) {
-        console.log("[DASHBOARD] Fetching offline/simulated simulation data", err);
-        // Populating offline/simulated local data based on role
-        if (profile.role === 'admin') {
-          setAllUsers([
-            {
-              uid: 'demo-candidate-uid-123',
-              role: 'candidate',
-              displayName: 'Marie Kouassi',
-              email: 'marie.k@gmail.com',
-              photoURL: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=200&auto=format&fit=crop',
-              skills: ["Garde d'enfants", "Cuisine africaine", "Ménage"],
-              isVerified: true,
-              isPremium: false,
-              averageRating: 4.8,
-              reviewCount: 3,
-              createdAt: new Date().toISOString()
-            },
-            {
-              uid: 'demo-employer-uid-456',
-              role: 'employer',
-              displayName: 'Société Ivoire Prestige',
-              email: 'employer@ivoiresource.ci',
-              photoURL: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?q=80&w=200&auto=format&fit=crop',
-              skills: [],
-              isVerified: true,
-              isPremium: true,
-              averageRating: 0,
-              reviewCount: 0,
-              createdAt: new Date().toISOString()
-            }
-          ]);
-          
-          const localJobs = JSON.parse(localStorage.getItem('offline_jobs') || '[]');
-          const defaultDemoJobs = [
-            {
-              id: 'demo-0',
-              employerId: 'system',
-              title: 'Nounou Plein Temps (Cocody)',
-              description: 'Recherche nounou expérimentée pour garde de deux jumeaux de 2 ans. Références exigées.',
-              category: 'nounou',
-              location: 'Abidjan',
-              salaryRange: '120 000 FCFA',
-              status: 'approved',
-              isPremium: true,
-              createdAt: new Date().toISOString()
-            }
-          ];
-          setMyJobs(localJobs.length > 0 ? localJobs : defaultDemoJobs);
-
-          const localApps = JSON.parse(localStorage.getItem('offline_applications') || '[]');
-          const defaultDemoApps = [
-            {
-              id: 'local-app-1',
-              jobId: 'demo-0',
-              employerId: 'system',
-              candidateId: 'demo-candidate-uid-123',
-              status: 'pending',
-              message: "Bonjour, j'ai 3 ans d'expérience dans la garde de très jeunes enfants et d'entretien de maison.",
-              candidateName: 'Marie Kouassi',
-              photoURL: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=200&auto=format&fit=crop',
-              experienceYears: 3,
-              cvName: 'Mon_CV.pdf',
-              cvUrl: '#',
-              createdAt: new Date().toISOString()
-            }
-          ];
-          setApps(localApps.length > 0 ? localApps : defaultDemoApps);
-        }
-
-        if (profile.role === 'employer') {
-          setCandidates([
-            {
-              uid: 'demo-candidate-uid-123',
-              role: 'candidate',
-              displayName: 'Marie Kouassi',
-              email: 'marie.k@gmail.com',
-              photoURL: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=200&auto=format&fit=crop',
-              skills: ["Garde d'enfants", "Cuisine africaine", "Ménage familial"],
-              isVerified: true,
-              isPremium: false,
-              averageRating: 4.8,
-              reviewCount: 3,
-              createdAt: new Date().toISOString(),
-              verificationDocs: [
-                { id: 'doc1', name: 'CNI_Marie_Kouassi.pdf', type: 'cni_passport', status: 'approved', comment: 'Validé avec succès par l\'admin' }
-              ]
-            }
-          ]);
-
-          const localJobs = JSON.parse(localStorage.getItem('offline_jobs') || '[]');
-          setMyJobs(localJobs.filter((j: any) => j.employerId === user.uid));
-
-          const localApps = JSON.parse(localStorage.getItem('offline_applications') || '[]');
-          setApps(localApps.filter((a: any) => a.employerId === user.uid));
-          setUnlockedCandidateIds(['demo-candidate-uid-123']);
-        }
-
-        if (profile.role === 'candidate') {
-          const localApps = JSON.parse(localStorage.getItem('offline_applications') || '[]');
-          setApps(localApps.filter((a: any) => a.candidateId === user.uid));
-        }
+        console.error("[DASHBOARD] Erreur lors du chargement des données:", err);
+        showNotification("Erreur lors du chargement de vos données.", "error");
       } finally {
         setLoadingData(false);
       }
@@ -1022,42 +715,19 @@ export function DashboardView({
 
   const viewCandidate = async (candidateId: string, app?: Application) => {
     try {
-      const isDemo = !isBackendAvailable || (user?.uid?.startsWith('demo-') ?? true);
-      if (isDemo) {
-        throw new Error("Client Offline Mode");
-      }
-      const snap = await getDoc(doc(db, 'users', candidateId));
-      let candidateData: UserProfile;
-      if (snap.exists()) {
-        candidateData = snap.data() as UserProfile;
-      } else {
-        throw new Error("Candidate document not found");
+      const candidateData = await userService.getUserProfile(candidateId);
+      if (!candidateData) {
+        showNotification("Ce profil candidat est introuvable.", "error");
+        return;
       }
       setSelectedCandidate(candidateData);
       setSelectedApplication(app || null);
     } catch (err) {
-      console.warn("Could not retrieve candidate document from real Firestore, using local fallback profile:", err);
-      // Fallback profile using application context or localstorage users
-      const localUsers = JSON.parse(localStorage.getItem('offline_users') || '[]');
-      const foundUser = localUsers.find((u: any) => u.uid === candidateId);
-      
-      const candidateData: UserProfile = {
-        uid: candidateId,
-        role: 'candidate',
-        displayName: foundUser?.displayName || app?.candidateName || `Candidat ${candidateId.substring(0, 6)}...`,
-        email: foundUser?.email || '',
-        photoURL: foundUser?.photoURL || app?.photoURL || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=200&auto=format&fit=crop',
-        skills: foundUser?.skills || ["Garde d'enfants", "Ménage", "Cuisine"],
-        isVerified: foundUser?.isVerified ?? true,
-        isPremium: foundUser?.isPremium ?? false,
-        averageRating: foundUser?.averageRating || 4.8,
-        reviewCount: foundUser?.reviewCount || 2,
-        createdAt: foundUser?.createdAt || new Date().toISOString()
-      };
-      setSelectedCandidate(candidateData);
-      setSelectedApplication(app || null);
+      showNotification("Erreur lors du chargement du profil candidat.", "error");
+      console.error(err);
+      return;
     }
-    
+
     // Clear checkout state
     setPhoneNumber('');
     setPaymentError('');
@@ -1124,22 +794,11 @@ export function DashboardView({
           if (user && selectedCandidate) {
             try {
               if (chosenPlan === 'one-time') {
-                const unlockId = `${user.uid}_${selectedCandidate.uid}`;
-                await setDoc(doc(db, 'unlocks', unlockId), {
-                  id: unlockId,
-                  employerId: user.uid,
-                  candidateId: selectedCandidate.uid,
-                  createdAt: new Date().toISOString()
-                });
+                await unlockService.unlockCandidate(user.$id, selectedCandidate.uid);
                 setUnlockedCandidateIds(prev => [...prev, selectedCandidate.uid]);
               } else if (chosenPlan === 'monthly') {
-                await setDoc(doc(db, 'users', user.uid), {
-                  isPremium: true
-                }, { merge: true });
-                onProfileUpdate({
-                  ...profile,
-                  isPremium: true
-                });
+                const updated = await userService.updateUserProfile(user.$id, { isPremium: true });
+                onProfileUpdate(updated);
               }
             } catch (pErr) {
               console.warn('Failed pre-saving state:', pErr);
@@ -1172,22 +831,11 @@ export function DashboardView({
       if (user && selectedCandidate) {
         try {
           if (chosenPlan === 'one-time') {
-            const unlockId = `${user.uid}_${selectedCandidate.uid}`;
-            await setDoc(doc(db, 'unlocks', unlockId), {
-              id: unlockId,
-              employerId: user.uid,
-              candidateId: selectedCandidate.uid,
-              createdAt: new Date().toISOString()
-            });
+            await unlockService.unlockCandidate(user.$id, selectedCandidate.uid);
             setUnlockedCandidateIds(prev => [...prev, selectedCandidate.uid]);
           } else if (chosenPlan === 'monthly') {
-            await setDoc(doc(db, 'users', user.uid), {
-              isPremium: true
-            }, { merge: true });
-            onProfileUpdate({
-              ...profile,
-              isPremium: true
-            });
+            const updated = await userService.updateUserProfile(user.$id, { isPremium: true });
+            onProfileUpdate(updated);
           }
         } catch (error) {
           console.error("Failed to persist real unlock/subscription record:", error);
@@ -1270,7 +918,7 @@ export function DashboardView({
            </div>
            
            <div className="flex flex-col gap-2">
-              <button onClick={() => signOut(auth)} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold text-red-500 hover:bg-red-50 transition-all">
+              <button onClick={() => onLogout()} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold text-red-500 hover:bg-red-50 transition-all">
                 <LogOut className="h-4 w-4" /> Déconnexion
               </button>
            </div>

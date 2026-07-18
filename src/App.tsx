@@ -19,6 +19,7 @@ import {
 import { Models } from 'appwrite';
 import { authService } from './services/authService';
 import { sourcingService } from './services/sourcingService';
+import { userService } from './services/userService';
 import { UserProfile, JobPost, UserRole } from './types';
 import { LandingView } from './components/LandingView';
 import { JobListView, JobDetailView } from './components/JobListView';
@@ -164,63 +165,28 @@ export default function App() {
       setLoading(false);
     }, 8000);
 
-    // Auto-login of saved demo/bypass connections for smooth offline testing
-    const savedDemoUser = localStorage.getItem('demo_user');
-    const savedDemoProfile = localStorage.getItem('demo_profile');
-    if (savedDemoUser && savedDemoProfile) {
-      setUser(JSON.parse(savedDemoUser));
-      setProfile(JSON.parse(savedDemoProfile));
-      setLoading(false);
-      clearTimeout(timer);
-      fetchJobs().catch(() => {});
-      return;
-    }
-
-    // Proactive check: if Backend config is blank/missing (as on Vercel before env setup), we run in quiet offline demo mode rather than crashing
-    
-
-    let unsubscribe = () => {};
     authService.getCurrentUser().then(async (u) => {
-
       setUser(u);
       try {
         if (u) {
-          let profileData: UserProfile | null = null;
-          try {
-            const docSnap = { exists: () => false, data: () => null }; // MOCK
-            if (docSnap.exists()) {
-              profileData = docSnap.data() as UserProfile;
-              localStorage.setItem(`profile_${u.$id}`, JSON.stringify(profileData));
-            }
-          } catch (getDocErr: any) {
-            console.warn("[Backend] getDoc failed or client offline. Proceeding to local storage fallback:", getDocErr);
-            const cached = localStorage.getItem(`profile_${u.$id}`);
-            if (cached) {
-              profileData = JSON.parse(cached);
-            } else {
-              // Graceful real-time fallback profile
-              profileData = {
-                uid: u.$id,
-                role: 'candidate',
-                displayName: u.name || 'Utilisateur Source',
-                email: u.email || '',
-                photoURL: '' || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=200&auto=format&fit=crop',
-                skills: [],
-                isVerified: false,
-                isPremium: false,
-                averageRating: 0,
-                reviewCount: 0,
-                createdAt: new Date().toISOString()
-              };
-            }
-            setIsOffline(true);
+          let profileData = await userService.getUserProfile(u.$id);
+          if (!profileData) {
+            profileData = await userService.createUserProfile(u.$id, {
+              role: u.email === 'koffiw4@gmail.com' ? 'admin' : 'candidate',
+              displayName: u.name || 'Utilisateur Source',
+              email: u.email || '',
+              photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=200&auto=format&fit=crop',
+              skills: [],
+              isVerified: false,
+              isPremium: false,
+              averageRating: 0,
+              reviewCount: 0,
+              createdAt: new Date().toISOString()
+            });
+          } else if (u.email === 'koffiw4@gmail.com' && profileData.role !== 'admin') {
+            profileData = await userService.updateUserProfile(u.$id, { role: 'admin' });
           }
-          if (profileData) {
-            if (u.email === 'koffiw4@gmail.com') {
-              profileData.role = 'admin';
-            }
-            setProfile(profileData);
-          }
+          setProfile(profileData);
         } else {
           setProfile(null);
         }
@@ -231,27 +197,8 @@ export default function App() {
         setLoading(false);
         clearTimeout(timer);
       }
-    }, (err: any) => {
-      console.error("[Backend] Initial auth state error callback triggered:", err);
-      const isApiKeyErr = err.code === 'auth/api-key-not-valid' || 
-                          err.code === 'auth/invalid-api-key' ||
-                          (err.message && (
-                            err.message.toLowerCase().includes('api-key-not-valid') || 
-                            err.message.toLowerCase().includes('invalid-api-key') || 
-                            err.message.toLowerCase().includes('api key')
-                          ));
-      if (isApiKeyErr) {
-        console.warn("[Backend] Invalid API Key detected on startup. Dynamic fallback to local simulation mode activated.");
-        
-        addToast("⚠️ Clé API Backend non valide configurée. Utilisation automatique du mode Simulation.", "info");
-      }
-      setLoading(false);
-      clearTimeout(timer);
     });
-    return () => {
-      if (unsubscribe) /* unsubscribe() */;
-      clearTimeout(timer);
-    };
+    return () => clearTimeout(timer);
   }, []);
 
   useEffect(() => {
@@ -282,101 +229,15 @@ export default function App() {
       }
       setIsOffline(false);
     } catch (err: any) {
-      console.warn("Running in local simulation mode for jobs list:", err);
-      let allLocalJobs: JobPost[] = [];
-      const localJobsStr = localStorage.getItem('offline_jobs');
-      
-      if (localJobsStr) {
-        allLocalJobs = JSON.parse(localJobsStr);
-      } else {
-        const demoJobs: JobPost[] = [
-          {
-            id: 'demo-0',
-            employerId: 'system',
-            title: 'Nounou Plein Temps (Cocody)',
-            description: 'Recherche nounou expérimentée pour garde de deux jumeaux de 2 ans. Logée ou non-logée. Références exigées.',
-            category: 'nounou',
-            location: 'Abidjan',
-            salaryRange: '120 000 FCFA',
-            status: 'approved',
-            isPremium: true,
-            createdAt: new Date().toISOString()
-          },
-          {
-             id: 'demo-1',
-             employerId: 'system',
-             title: 'Chauffeur Professionnel VTC',
-             description: 'Besoin d un chauffeur maitrisant la zone de Marcory et Plateau. Conduite défensive exigée.',
-             category: 'chauffeur',
-             location: 'Abidjan',
-             salaryRange: '150 000 FCFA',
-             status: 'approved',
-             isPremium: false,
-             createdAt: new Date().toISOString()
-          }
-        ];
-        allLocalJobs = demoJobs;
-        localStorage.setItem('offline_jobs', JSON.stringify(demoJobs));
-      }
-
-      // Filter local simulation jobs by category and city to match backend logic
-      let filtered = [...allLocalJobs];
-      if (selectedCategory) {
-        filtered = filtered.filter(j => j.category === selectedCategory);
-      }
-      if (selectedCity) {
-        filtered = filtered.filter(j => j.location === selectedCity);
-      }
-
-      // Sort by newest created
-      filtered.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
-      setJobs(filtered);
+      console.error("Erreur lors du chargement des offres d'emploi:", err);
+      setJobs([]);
       setIsOffline(true);
     }
   };
 
-  const handleDemoLogin = (role: UserRole) => {
-    const mockUid = 'demo-' + role + '-uid-' + Math.random().toString(36).substring(7);
-    const mockUser = {
-      uid: mockUid,
-      displayName: role === 'candidate' ? 'Marie Kouassi' : role === 'employer' ? 'Société Sourcing CI' : 'Administrateur Sourcing',
-      email: `${role}@ivoiresource.ci`,
-      photoURL: role === 'candidate' 
-        ? 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=200&auto=format&fit=crop'
-        : 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?q=80&w=200&auto=format&fit=crop'
-    };
-
-    const mockProfile: UserProfile = {
-      uid: mockUid,
-      role,
-      displayName: mockUser.displayName,
-      email: mockUser.email,
-      photoURL: mockUser.photoURL,
-      skills: role === 'candidate' ? ["Garde d'enfants", "Ménage", "Cuisine africaine"] : [],
-      isVerified: role === 'candidate', // candidate pre-certified for easy simulator use
-      isPremium: role === 'employer',
-      averageRating: role === 'candidate' ? 4.9 : 0,
-      reviewCount: role === 'candidate' ? 3 : 0,
-      createdAt: new Date().toISOString()
-    };
-
-    localStorage.setItem('demo_user', JSON.stringify(mockUser));
-    localStorage.setItem('demo_profile', JSON.stringify(mockProfile));
-
-    setUser(mockUser as any);
-    setProfile(mockProfile);
-    setAuthError(null);
-    setView('dashboard');
-    addToast(`🚀 Connexion de simulation réussie en tant que ${role === 'employer' ? 'Recruteur' : role === 'admin' ? 'Administrateur' : 'Candidat'} !`, 'success');
-  };
-
   const handleLogout = async () => {
     try {
-      localStorage.removeItem('demo_user');
-      localStorage.removeItem('demo_profile');
-      if (false) {
-        await authService.logout();
-      }
+      await authService.logout();
     } catch (err) {
       console.error("Logout error:", err);
     }
@@ -389,138 +250,6 @@ export default function App() {
   const openGeneralLogin = () => {
     setModalActiveTab('login');
     setShowGeneralLoginModal(true);
-  };
-
-  const handleLocalSimulationConnexion = (cleanedEmail: string, password?: string) => {
-    const localUsersStr = localStorage.getItem('offline_users') || '[]';
-    const localUsers = JSON.parse(localUsersStr);
-    
-    let existing = localUsers.find((u: any) => u.email.toLowerCase() === cleanedEmail.toLowerCase());
-    
-    if (existing) {
-      if (password && existing.simulatedPassword && existing.simulatedPassword !== password) {
-        addToast("⚠️ Mot de passe incorrect pour ce compte simulé.", "error");
-        return;
-      }
-      
-      const mockUser = {
-        uid: existing.uid,
-        displayName: existing.displayName,
-        email: existing.email,
-        photoURL: existing.photoURL
-      };
-      
-      localStorage.setItem('demo_user', JSON.stringify(mockUser));
-      localStorage.setItem('demo_profile', JSON.stringify(existing));
-      
-      setUser(mockUser as any);
-      setProfile(existing);
-      setAuthError(null);
-      setShowGeneralLoginModal(false);
-      setView('dashboard');
-      addToast(`🚀 Connexion réussie (${cleanedEmail}) !`, 'success');
-    } else {
-      // Auto-inscription!
-      let userRole: UserRole = 'candidate';
-      let name = "Marie Kouassi";
-
-      if (cleanedEmail === 'koffiw4@gmail.com') {
-        userRole = 'admin';
-        name = "Koffi Admin";
-      } else if (cleanedEmail.includes('employer') || cleanedEmail.includes('recruteur') || cleanedEmail.includes('resto') || cleanedEmail.includes('entreprise') || cleanedEmail.includes('societe')) {
-        userRole = 'employer';
-        name = "Société Sourcing CI";
-      }
-
-      const mockUid = 'demo-' + userRole + '-uid-' + Math.random().toString(36).substring(7);
-      const mockUser = {
-        uid: mockUid,
-        displayName: name,
-        email: cleanedEmail,
-        photoURL: userRole === 'candidate' 
-          ? 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=200&auto=format&fit=crop'
-          : 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?q=80&w=200&auto=format&fit=crop'
-      };
-
-      const mockProfile: UserProfile & { simulatedPassword?: string } = {
-        uid: mockUid,
-        role: userRole,
-        displayName: mockUser.displayName,
-        email: mockUser.email,
-        photoURL: mockUser.photoURL,
-        skills: userRole === 'candidate' ? ["Garde d'enfants", "Ménage", "Cuisine africaine"] : [],
-        isVerified: userRole === 'candidate',
-        isPremium: userRole === 'employer',
-        averageRating: userRole === 'candidate' ? 4.9 : 0,
-        reviewCount: userRole === 'candidate' ? 3 : 0,
-        createdAt: new Date().toISOString(),
-        simulatedPassword: password || ''
-      };
-
-      localUsers.push(mockProfile);
-      localStorage.setItem('offline_users', JSON.stringify(localUsers));
-
-      localStorage.setItem('demo_user', JSON.stringify(mockUser));
-      localStorage.setItem('demo_profile', JSON.stringify(mockProfile));
-
-      setUser(mockUser as any);
-      setProfile(mockProfile);
-      setAuthError(null);
-      setShowGeneralLoginModal(false);
-      setView('dashboard');
-      addToast(`✨ Compte démo créé automatiquement (${cleanedEmail}) !`, 'success');
-    }
-  };
-
-  const handleLocalSimulationInscription = (name: string, cleanedEmail: string, assignedRole: UserRole, password?: string) => {
-    const localUsersStr = localStorage.getItem('offline_users') || '[]';
-    const localUsers = JSON.parse(localUsersStr);
-    
-    let existing = localUsers.find((u: any) => u.email.toLowerCase() === cleanedEmail.toLowerCase());
-    
-    if (existing) {
-      addToast(`💡 Cet e-mail est déjà enregistré. Connexion automatique...`, "info");
-      handleLocalSimulationConnexion(cleanedEmail, password);
-      return;
-    }
-
-    const mockUid = 'demo-' + assignedRole + '-uid-' + Math.random().toString(36).substring(7);
-    const mockUser = {
-      uid: mockUid,
-      displayName: name,
-      email: cleanedEmail,
-      photoURL: assignedRole === 'candidate' 
-        ? 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=200&auto=format&fit=crop'
-        : 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?q=80&w=200&auto=format&fit=crop'
-    };
-
-    const mockProfile: UserProfile & { simulatedPassword?: string } = {
-      uid: mockUid,
-      role: assignedRole,
-      displayName: name,
-      email: cleanedEmail,
-      photoURL: mockUser.photoURL,
-      skills: assignedRole === 'candidate' ? ["Garde d'enfants", "Ménage"] : [],
-      isVerified: false,
-      isPremium: assignedRole === 'employer',
-      averageRating: 0,
-      reviewCount: 0,
-      createdAt: new Date().toISOString(),
-      simulatedPassword: password || ''
-    };
-
-    localUsers.push(mockProfile);
-    localStorage.setItem('offline_users', JSON.stringify(localUsers));
-
-    localStorage.setItem('demo_user', JSON.stringify(mockUser));
-    localStorage.setItem('demo_profile', JSON.stringify(mockProfile));
-
-    setUser(mockUser as any);
-    setProfile(mockProfile);
-    setAuthError(null);
-    setShowGeneralLoginModal(false);
-    setView('dashboard');
-    addToast(`🎉 Inscription réussie (${cleanedEmail}) !`, 'success');
   };
 
   const executeConnexion = async (email: string, password?: string) => {
@@ -539,21 +268,21 @@ export default function App() {
 
     try {
       addToast("🔑 Authentification Backend...", "info");
-      let u: any = null;
+      let u: Models.User<Models.Preferences> | null = null;
       let isNewUser = false;
-      
+
       try {
         // Attempt sign in
-        const loginResult = await authService.login({email: cleanedEmail, password});
-        u = loginResult;
+        const loginResult = await authService.login({ email: cleanedEmail, password });
+        u = loginResult.user;
       } catch (loginErr: any) {
         console.warn("Connexion attempt failed, checking for auto-signup...", loginErr);
         if (loginErr.code === 'auth/user-not-found' || loginErr.code === 'auth/invalid-credential' || loginErr.message?.includes('user-not-found')) {
           try {
             // Auto inscription since user does not exist
             addToast("✨ Compte inexistant. Création automatique...", "info");
-            const signupResult = await authService.register({name: name || cleanedEmail.split("@")[0], email: cleanedEmail, password});
-            u = signupResult;
+            const signupResult = await authService.register({ name: cleanedEmail.split("@")[0], email: cleanedEmail, password });
+            u = signupResult.user;
             isNewUser = true;
           } catch (signupErr: any) {
             if (signupErr.code === 'auth/email-already-in-use') {
@@ -562,8 +291,6 @@ export default function App() {
               throw signupErr;
             }
           }
-        } else if (loginErr.message?.includes('api-key-not-valid')) {
-          throw loginErr; // bubble up for the api-key fallback
         } else {
           throw loginErr;
         }
@@ -573,52 +300,34 @@ export default function App() {
         throw new Error("Authentification échouée.");
       }
 
-      // Sync user profile in Backend
-      const docSnap = { exists: () => false, data: () => null };
-      if (!docSnap.exists() || isNewUser) {
+      // Synchronise le profil dans Appwrite
+      let profileData = isNewUser ? null : await userService.getUserProfile(u.$id);
+      if (!profileData) {
         const defaultRole = u.email === 'koffiw4@gmail.com' ? 'admin' : 'candidate';
-        const newProfile: UserProfile = {
-          uid: u.$id,
+        profileData = await userService.createUserProfile(u.$id, {
           role: defaultRole,
           displayName: u.name || cleanedEmail.split('@')[0] || 'Utilisateur',
           email: u.email || cleanedEmail || '',
-          photoURL: '' || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=200&auto=format&fit=crop',
+          photoURL: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=200&auto=format&fit=crop',
           skills: [],
           isVerified: false,
           isPremium: false,
           averageRating: 0,
           reviewCount: 0,
           createdAt: new Date().toISOString()
-        };
-        // await authService.updatePreferences(newProfile);
-        setProfile(newProfile);
+        });
         addToast(`📝 Profil ${defaultRole === 'admin' ? 'Administrateur' : 'Candidat'} créé automatiquement !`, 'success');
-      } else {
-        const existingProfile = docSnap.data() as UserProfile;
-        if (u.email === 'koffiw4@gmail.com') {
-          if (existingProfile.role !== 'admin') {
-            const updated = { ...existingProfile, role: 'admin' as UserRole };
-            // await authService.updatePreferences(updated);
-            setProfile(updated);
-          } else {
-            setProfile(existingProfile);
-          }
-        } else {
-          setProfile(existingProfile);
-        }
+      } else if (u.email === 'koffiw4@gmail.com' && profileData.role !== 'admin') {
+        profileData = await userService.updateUserProfile(u.$id, { role: 'admin' });
       }
-      
+      setProfile(profileData);
+
       setShowGeneralLoginModal(false);
       setView('dashboard');
       addToast(isNewUser ? `🎉 Compte créé et connexion réussie !` : `🚀 Connexion réussie !`, 'success');
     } catch (err: any) {
       console.error("Backend Login Error", err);
-      if (err.message && err.message.includes('api-key-not-valid')) {
-        addToast("⚠️ Clé ou Configuration Backend non opérationnelle. Connexion via simulation locale...", "info");
-        handleLocalSimulationConnexion(cleanedEmail, password);
-      } else {
-        addToast(`⚠️ Identifiants incorrects ou Erreur : ${err.message || err.code}`, 'error');
-      }
+      addToast(`⚠️ Identifiants incorrects ou Erreur : ${err.message || err.code}`, 'error');
     }
   };
 
@@ -629,40 +338,30 @@ export default function App() {
       addToast("🔑 Authentification Google...", "info");
       await authService.loginWithGoogle();
       const u = await authService.getCurrentUser();
-      
-      const docSnap = { exists: () => false, data: () => null };
-      if (!docSnap.exists()) {
+      if (!u) {
+        throw new Error("Authentification Google échouée.");
+      }
+
+      let profileData = await userService.getUserProfile(u.$id);
+      if (!profileData) {
         const defaultRole = u.email === 'koffiw4@gmail.com' ? 'admin' : 'candidate';
-        const newProfile: UserProfile = {
-          uid: u.$id,
+        profileData = await userService.createUserProfile(u.$id, {
           role: defaultRole,
           displayName: u.name || 'Utilisateur Google',
           email: u.email || '',
-          photoURL: '' || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=200&auto=format&fit=crop',
+          photoURL: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=200&auto=format&fit=crop',
           skills: [],
           isVerified: false,
           isPremium: false,
           averageRating: 0,
           reviewCount: 0,
           createdAt: new Date().toISOString()
-        };
-        // await authService.updatePreferences(newProfile);
-        setProfile(newProfile);
+        });
         addToast(`📝 Profil ${defaultRole === 'admin' ? 'Administrateur' : 'Candidat'} créé automatiquement !`, 'success');
-      } else {
-        const existingProfile = docSnap.data() as UserProfile;
-        if (u.email === 'koffiw4@gmail.com') {
-          if (existingProfile.role !== 'admin') {
-            const updated = { ...existingProfile, role: 'admin' as UserRole };
-            // await authService.updatePreferences(updated);
-            setProfile(updated);
-          } else {
-            setProfile(existingProfile);
-          }
-        } else {
-          setProfile(existingProfile);
-        }
+      } else if (u.email === 'koffiw4@gmail.com' && profileData.role !== 'admin') {
+        profileData = await userService.updateUserProfile(u.$id, { role: 'admin' });
       }
+      setProfile(profileData);
       setShowGeneralLoginModal(false);
       setView('dashboard');
       addToast(`🚀 Connexion Google réussie !`, 'success');
@@ -671,8 +370,7 @@ export default function App() {
       if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
         addToast("Connexion annulée.", 'info');
       } else {
-        addToast("⚠️ Backend non opérationnel. Bascule sur la simulation locale...", "info");
-        handleLocalSimulationConnexion("google-user@gmail.com");
+        addToast(`⚠️ La connexion Google a échoué : ${err.message || err.code}`, 'error');
       }
     }
   };
@@ -698,18 +396,18 @@ export default function App() {
 
     try {
       addToast("🔑 Inscription via Backend Auth...", "info");
-      let u: any = null;
+      let u: Models.User<Models.Preferences> | null = null;
       let shouldCreateProfile = false;
 
       try {
-        const result = await authService.register({name: name || cleanedEmail.split("@")[0], email: cleanedEmail, password});
-        u = result;
+        const result = await authService.register({ name: name || cleanedEmail.split("@")[0], email: cleanedEmail, password });
+        u = result.user;
         shouldCreateProfile = true;
       } catch (signupErr: any) {
         if (signupErr.code === 'auth/email-already-in-use') {
           addToast("💡 Cet e-mail est déjà inscrit. Connexion automatique...", "info");
-          const loginResult = await authService.login({email: cleanedEmail, password});
-        u = loginResult;
+          const loginResult = await authService.login({ email: cleanedEmail, password });
+          u = loginResult.user;
         } else {
           throw signupErr;
         }
@@ -720,57 +418,43 @@ export default function App() {
       }
 
       const defaultRole = u.email === 'koffiw4@gmail.com' ? 'admin' : assignedRole;
+      let profileData: UserProfile;
       if (shouldCreateProfile) {
-        const newProfile: UserProfile = {
-          uid: u.$id,
+        profileData = await userService.createUserProfile(u.$id, {
           role: defaultRole,
           displayName: name || u.name || 'Utilisateur',
           email: u.email || cleanedEmail || '',
-          photoURL: '' || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=200&auto=format&fit=crop',
+          photoURL: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=200&auto=format&fit=crop',
           skills: [],
           isVerified: false,
           isPremium: false,
           averageRating: 0,
           reviewCount: 0,
           createdAt: new Date().toISOString()
-        };
-
-        // await authService.updatePreferences(newProfile);
-        setProfile(newProfile);
+        });
       } else {
-        const docSnap = { exists: () => false, data: () => null };
-        if (docSnap.exists()) {
-          setProfile(docSnap.data() as UserProfile);
-        } else {
-          const newProfile: UserProfile = {
-            uid: u.$id,
-            role: defaultRole,
-            displayName: name || 'Utilisateur',
-            email: u.email || cleanedEmail || '',
-            photoURL: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=200&auto=format&fit=crop',
-            skills: [],
-            isVerified: false,
-            isPremium: false,
-            averageRating: 0,
-            reviewCount: 0,
-            createdAt: new Date().toISOString()
-          };
-          // await authService.updatePreferences(newProfile);
-          setProfile(newProfile);
-        }
+        const existingProfile = await userService.getUserProfile(u.$id);
+        profileData = existingProfile || await userService.createUserProfile(u.$id, {
+          role: defaultRole,
+          displayName: name || 'Utilisateur',
+          email: u.email || cleanedEmail || '',
+          photoURL: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=200&auto=format&fit=crop',
+          skills: [],
+          isVerified: false,
+          isPremium: false,
+          averageRating: 0,
+          reviewCount: 0,
+          createdAt: new Date().toISOString()
+        });
       }
+      setProfile(profileData);
 
       setShowGeneralLoginModal(false);
       setView('dashboard');
       addToast(shouldCreateProfile ? `🎉 Compte créé en tant que ${defaultRole === 'employer' ? 'Recruteur' : 'Candidat'} !` : `🚀 Connexion réussie !`, 'success');
     } catch (err: any) {
       console.error("Backend Inscription Error:", err);
-      if (err.message && err.message.includes('api-key-not-valid')) {
-        addToast("⚠️ Clé ou Configuration Backend non opérationnelle. Inscription via simulation locale...", "info");
-        handleLocalSimulationInscription(name, cleanedEmail, assignedRole, password);
-      } else {
-        addToast(`⚠️ Échec de l'inscription : ${err.message || err.code}`, 'error');
-      }
+      addToast(`⚠️ Échec de l'inscription : ${err.message || err.code}`, 'error');
     }
   };
 
@@ -779,49 +463,6 @@ export default function App() {
     setSignupRole(role === 'admin' ? 'candidate' : role);
     setModalActiveTab('signup');
     setShowGeneralLoginModal(true);
-  };
-
-  const seedData = async () => {
-    if (jobs.length > 0) return;
-    const demoJobs: Omit<JobPost, 'id'>[] = [
-      {
-        employerId: 'system',
-        title: 'Nounou Plein Temps (Cocody)',
-        description: 'Recherche nounou expérimentée pour garde de deux jumeaux de 2 ans. Logée ou non-logée. Références exigées.',
-        category: 'nounou',
-        location: 'Abidjan',
-        salaryRange: '120 000',
-        status: 'approved',
-        isPremium: true,
-        createdAt: new Date().toISOString()
-      },
-      {
-         employerId: 'system',
-         title: 'Chauffeur Professionnel VTC',
-         description: 'Besoin d un chauffeur maitrisant la zone de Marcory et Plateau. Conduite défensive exigée.',
-         category: 'chauffeur',
-         location: 'Abidjan',
-         salaryRange: '150 000',
-         status: 'approved',
-         isPremium: false,
-         createdAt: new Date().toISOString()
-      }
-    ];
-    
-    if (!user) {
-      setJobs(demoJobs.map((j, i) => ({ id: `demo-${i}`, ...j } as JobPost)));
-      return;
-    }
-
-    try {
-      for (const job of demoJobs) {
-        // seed job
-      }
-      await fetchJobs();
-    } catch (err) {
-      console.error("Seeding failed (permissions?), showing local data:", err);
-      setJobs(demoJobs.map((j, i) => ({ id: `demo-${i}`, ...j } as JobPost)));
-    }
   };
 
   const handleApply = async (jobId: string, employerId: string) => {
@@ -844,32 +485,42 @@ export default function App() {
     photoURL: string;
     experienceYears: number;
     phone: string;
-    cvName?: string;
-    cvUrl?: string;
+    cvFile?: File;
     message: string;
   }) => {
-    if (!user || !applyingJob) return;
+    if (!user || !applyingJob || !profile) return;
     try {
-      // add application
+      const applicationDoc: any = await sourcingService.submitApplication(
+        applyingJob.id,
+        user.$id,
+        applyingJob.employerId,
+        {
+          candidateName: data.candidateName,
+          photoURL: data.photoURL,
+          experienceYears: data.experienceYears,
+          message: data.message
+        },
+        data.cvFile
+      );
 
       // Sync user profile in real-time
-      if (profile) {
-        const updatedProfile = {
-          ...profile,
-          displayName: data.candidateName,
-          photoURL: data.photoURL,
-          phone: data.phone,
-          ...(data.cvName ? { cvName: data.cvName, cvUrl: data.cvUrl } : {})
-        };
-        // update user
-        setProfile(updatedProfile);
-      }
+      const updatedProfile = await userService.updateUserProfile(user.$id, {
+        displayName: data.candidateName,
+        photoURL: data.photoURL,
+        phone: data.phone,
+        ...(applicationDoc.cvFileId ? {
+          cvName: data.cvFile?.name,
+          cvUrl: sourcingService.getCVPreviewUrl(applicationDoc.cvFileId)
+        } : {})
+      });
+      setProfile(updatedProfile);
 
       setSuccessJob(applyingJob);
       setApplyingJob(null);
       setShowApplySuccess(true);
     } catch (err) {
       console.error("Submitting application failed:", err);
+      addToast("⚠️ Erreur lors de l'envoi de votre candidature. Veuillez réessayer.", "error");
     }
   };
 
@@ -1006,7 +657,6 @@ export default function App() {
                 setView('jobs');
               }}
               onLogin={handleLogin}
-              onDemoLogin={handleDemoLogin}
               user={user}
               profile={profile}
             />
@@ -1023,7 +673,6 @@ export default function App() {
                 canApply={profile?.role === 'candidate'}
                 onPostJob={() => setView('post-job')}
                 isEmployer={profile?.role === 'employer' || profile?.role === 'admin'}
-                onSeed={seedData}
                 onSelectJob={setSelectedJob}
               />
               
@@ -1055,6 +704,7 @@ export default function App() {
               setActiveTab={setDashboardTab} 
               onProfileUpdate={(p) => setProfile(p)}
               setView={setView}
+              onLogout={handleLogout}
             />
           )}
         </AnimatePresence>
@@ -1474,15 +1124,6 @@ export default function App() {
                 })()}
 
                 <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row gap-2.5">
-                  <button
-                    onClick={() => {
-                      setAuthError(null);
-                      handleDemoLogin(attemptedRole);
-                    }}
-                    className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer shadow-md shadow-emerald-50 flex items-center justify-center gap-1.5"
-                  >
-                    🛡️ Continuer en Mode Démo
-                  </button>
                   <button
                     onClick={() => {
                       if (typeof window !== 'undefined') {
