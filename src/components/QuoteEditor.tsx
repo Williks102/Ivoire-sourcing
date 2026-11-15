@@ -8,6 +8,21 @@ export interface QuoteDraft { lines: QuoteDraftLine[]; discount: string; validit
 
 export const emptyDraft = (): QuoteDraft => ({ lines: [{ label: '', qty: '1', unit: '', unitPrice: '' }], discount: '', validityDays: '15', conditions: '' });
 
+/** Remplit la saisie à partir d'un devis enregistré (modèle). */
+export const quoteToDraft = (q: Quote): QuoteDraft => ({
+  lines: q.lines.map((l) => ({ label: l.label, qty: String(l.qty), unit: l.unit, unitPrice: String(l.unitPrice) })),
+  discount: q.discount ? String(q.discount) : '',
+  validityDays: String(q.validityDays || 15),
+  conditions: q.conditions || '',
+});
+
+/** Lignes types, ajoutées en un clic. */
+const PRESETS: { label: string; line: QuoteDraftLine }[] = [
+  { label: "Main d'œuvre", line: { label: "Main d'œuvre", qty: '1', unit: 'h', unitPrice: '' } },
+  { label: 'Matériel', line: { label: 'Matériel', qty: '1', unit: 'u', unitPrice: '' } },
+  { label: 'Déplacement', line: { label: 'Déplacement', qty: '1', unit: 'forfait', unitPrice: '' } },
+];
+
 const num = (v: string) => Number(String(v).replace(/\s/g, '').replace(',', '.')) || 0;
 
 /** Convertit la saisie en devis (lignes vides ignorées). */
@@ -56,10 +71,25 @@ export function QuoteEditor({ value, onChange }: { value: QuoteDraft; onChange: 
       })}
 
       {value.lines.length < MAX_QUOTE_LINES && (
-        <button type="button" onClick={() => onChange({ ...value, lines: [...value.lines, { label: '', qty: '1', unit: '', unitPrice: '' }] })}
-          className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 hover:text-emerald-800">
-          <PlusCircle className="h-4 w-4" /> Ajouter une ligne
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" onClick={() => onChange({ ...value, lines: [...value.lines, { label: '', qty: '1', unit: '', unitPrice: '' }] })}
+            className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 hover:text-emerald-800">
+            <PlusCircle className="h-4 w-4" /> Ajouter une ligne
+          </button>
+          <span className="text-[10px] text-slate-300">ou</span>
+          {PRESETS.map((p) => (
+            <button key={p.label} type="button" aria-label={`Ajouter la ligne ${p.label}`}
+              onClick={() => {
+                // Si la dernière ligne est vide, on la remplit au lieu d'en ajouter une de plus.
+                const last = value.lines[value.lines.length - 1];
+                const blank = last && !last.label.trim() && !last.unitPrice.trim();
+                onChange({ ...value, lines: blank ? [...value.lines.slice(0, -1), { ...p.line }] : [...value.lines, { ...p.line }] });
+              }}
+              className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-white border border-slate-200 text-slate-600 hover:border-emerald-300">
+              + {p.label}
+            </button>
+          ))}
+        </div>
       )}
 
       <div className="grid grid-cols-2 gap-2">

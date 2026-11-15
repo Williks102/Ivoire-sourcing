@@ -67,6 +67,15 @@ export const db = {
     const { database } = config();
     return appwrite('PATCH', `/tablesdb/${database}/tables/${collection}/rows/${encodeURIComponent(id)}`, { data });
   },
+  async remove(collection: string, id: string) {
+    const { database } = config();
+    const { endpoint, project, key } = config();
+    const response = await fetch(`${endpoint}/tablesdb/${database}/tables/${collection}/rows/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: { 'X-Appwrite-Project': project, 'X-Appwrite-Key': key },
+    });
+    if (!response.ok && response.status !== 404) throw new HttpError(502, `Appwrite DELETE ${collection}/${id} -> ${response.status}`);
+  },
   /** `id` peut valoir 'unique()' pour laisser Appwrite générer l'identifiant. `permissions` : ex. ['read("user:abc")']. */
   async create(collection: string, id: string, data: Record<string, unknown>, permissions: string[] = []) {
     const { database } = config();

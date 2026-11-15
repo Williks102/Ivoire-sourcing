@@ -8,6 +8,9 @@ const DB = APPWRITE_CONFIG.DATABASE_ID;
 
 export interface PdfDoc { filename: string; pdfBase64: string }
 
+/** Modèle de devis enregistré par un artisan (réutilisable lors d'une offre). */
+export interface QuoteTemplate { id: string; name: string; quote: Quote | null; total: number; createdAt: string; updatedAt: string }
+
 export interface OutreachCandidate {
   id: string;
   name: string;
@@ -119,10 +122,17 @@ export const missionService = {
       quote: input.quote,
     }),
 
+  // --- Modèles de devis de l'artisan (serveur : chacun ne voit que les siens) ---
+  listQuoteTemplates: () => authFetch<{ templates: QuoteTemplate[]; max: number }>('/api/quotes', { action: 'list' }),
+  saveQuoteTemplate: (name: string, quote: Quote, id?: string) => authFetch<{ template: QuoteTemplate }>('/api/quotes', { action: 'save', id, name, quote }),
+  deleteQuoteTemplate: (id: string) => authFetch('/api/quotes', { action: 'delete', id }),
+
   // --- Documents PDF produits par le serveur ---
   quotePdf: (applicationId: string) => authFetch<PdfDoc>('/api/documents', { kind: 'quote', applicationId }),
   receiptPdf: (missionId: string) => authFetch<PdfDoc>('/api/documents', { kind: 'receipt', missionId }),
   statementPdf: (year: number) => authFetch<PdfDoc>('/api/documents', { kind: 'statement', year }),
+  /** Aperçu PDF d'un devis en cours de rédaction (rien n'est enregistré). */
+  draftPdf: (name: string, quote: Quote) => authFetch<PdfDoc>('/api/documents', { kind: 'draft', name: name || undefined, quote }),
 
   // --- Administration (réservé au label admin, vérifié côté serveur) ---
   adminListPayments: (offset = 0) =>

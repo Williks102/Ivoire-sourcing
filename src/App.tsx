@@ -53,7 +53,7 @@ export default function App() {
   const [selectedCity, setSelectedCity] = useState<string>('');
   const [jobs, setJobs] = useState<JobPost[]>([]);
   const [selectedJob, setSelectedJob] = useState<JobPost | null>(null);
-  const [dashboardTab, setDashboardTab] = useState<'overview' | 'verification' | 'my-jobs' | 'applications' | 'revenue' | 'admin' | 'profile'>('overview');
+  const [dashboardTab, setDashboardTab] = useState<'overview' | 'verification' | 'my-jobs' | 'applications' | 'quotes' | 'revenue' | 'admin' | 'profile'>('overview');
   const [showGeneralLoginModal, setShowGeneralLoginModal] = useState(false);
   const [modalActiveTab, setModalActiveTab] = useState<'login' | 'signup'>('login');
   const [modalPreselectedRole, setModalPreselectedRole] = useState<'candidate' | 'employer'>('candidate');

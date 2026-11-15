@@ -35,6 +35,10 @@ Index conseillés : `employerId`, `assignedArtisanId`, `status`.
 
 Index conseillés : `jobId`, `candidateId`.
 
+### `quote_templates` (modèles de devis de l'artisan, **serveur uniquement**)
+`ownerId` string · `name` string (80) · `quote` string (JSON, texte long) · `createdAt` string · `updatedAt` string.
+Aucune permission côté navigateur : chaque artisan lit et écrit les siens via `/api/quotes` (identité = JWT). 30 modèles maximum.
+
 ### `outreach` (journal des diffusions, **serveur uniquement**)
 `missionId` string · `artisanId` string · `channel` string (`whatsapp`) · `adminId` string · `createdAt` string.
 Aucune permission côté navigateur : lu et écrit par `/api/admin/outreach`.
@@ -94,6 +98,13 @@ prix unitaire), remise, validité (1 à 90 jours) et conditions. Le **serveur re
 (le prix envoyé par le navigateur est ignoré). Maximum 30 lignes ; textes nettoyés (pas de HTML). Sans devis détaillé, l'offre
 reste un simple prix. Le devis suit la négociation : si le prix change, le document affiche une ligne « Ajustement négocié » et
 le total reste égal au prix en cours, puis au **prix convenu** une fois accepté.
+
+**Onglet « Mes devis »** (artisan) : trois sections. *Mes modèles* : devis enregistrés (nom, lignes, remise, validité, conditions),
+modifiables, duplicables, avec aperçu PDF ; *Nouveau devis* : formulaire pour composer un devis ligne par ligne (lignes rapides
+« Main d'œuvre », « Matériel », « Déplacement »), total en direct, aperçu PDF, enregistrement ; *Devis envoyés* : les devis joints aux
+offres, avec numéro, état et PDF. Dans le formulaire d'offre, « Partir d'un de mes modèles » reprend toutes les lignes d'un modèle.
+Un modèle est validé et nettoyé comme un devis d'offre (`/api/quotes`, mêmes règles) ; l'aperçu PDF d'un brouillon
+(`kind: "draft"` de `/api/documents`) n'enregistre rien.
 
 **Documents PDF** (`POST /api/documents`, produits côté serveur à partir de la base) :
 - `quote` : devis d'une offre, avec ou sans lignes détaillées (client, artisan concerné, admin) ; numéro `DEV-AAAAMMJJ-XXXX`

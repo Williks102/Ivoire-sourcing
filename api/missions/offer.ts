@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { z } from 'zod';
 import { HttpError, MISSION_STATUS, authenticate, db, readBody, sanitizeText } from '../_lib/server.js';
 import { initialProposal } from '../_lib/negotiation.js';
-import { parseQuote, quoteProblem, quoteTotal } from '../_lib/quote.js';
+import { parseQuote, quoteInputSchema, quoteProblem, quoteTotal } from '../_lib/quote.js';
 
 /**
  * Envoi d'une offre (devis) par un artisan. Écrite par le serveur : l'identité de l'artisan
@@ -20,17 +20,7 @@ const Schema = z.object({
   experienceYears: z.number().int().min(0).max(60).default(0),
   artisanName: z.string().trim().min(1).max(80),
   /** Devis détaillé facultatif : le total est recalculé ici et devient le prix de l'offre. */
-  quote: z.object({
-    lines: z.array(z.object({
-      label: z.string().max(200),
-      qty: z.number().min(0).max(100000),
-      unit: z.string().max(20).optional(),
-      unitPrice: z.number().min(0).max(10_000_000),
-    })).min(1).max(30),
-    discount: z.number().min(0).max(10_000_000).optional(),
-    validityDays: z.number().min(1).max(90).optional(),
-    conditions: z.string().max(1000).optional(),
-  }).optional(),
+  quote: quoteInputSchema.optional(),
 });
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
