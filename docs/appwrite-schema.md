@@ -24,7 +24,7 @@ serveur : **seul le serveur** écrit `agreedPrice`, `assignedArtisanId`, `paid*`
 `scheduledDate` string · `budget` int (FCFA) · `status` string · `createdAt` string ·
 *(écrits par le serveur)* `assignedArtisanId` string · `assignedApplicationId` string · `agreedPrice` int · `assignedAt` string ·
 `completedAt` string · `paidAt` string · `paymentReference` string · `commissionAmount` int · `artisanPayout` int ·
-`payoutStatus` string (`pending` | `sent`)
+`payoutStatus` string (`pending` | `sent`) · `payoutSentAt` string · `payoutReference` string
 
 Index conseillés : `employerId`, `assignedArtisanId`, `status`.
 
@@ -63,7 +63,7 @@ Appwrite n'a pas de permissions par champ ; la règle retenue est donc : **les c
 |---|---|---|---|
 | `jobs` | lecture publique, aucune écriture | lecture/écriture | création (`/api/missions/create`), transitions, paiement |
 | `applications` | lecture de ses propres offres (permission de document : client de la mission + artisan) | lecture/écriture | création (`/api/missions/offer`), acceptation |
-| `payments` | aucun accès | aucun accès | tout |
+| `payments` | aucun accès | aucun accès en direct ; lecture et suivi des reversements via `/api/admin/payments` (label `admin` vérifié côté serveur) | tout |
 | `users` | crée son profil, lit/modifie le sien | lecture/écriture | lecture |
 
 Conséquences : un client ne peut ni se faire passer pour un autre (`employerId` vient du JWT), ni contourner la
@@ -72,6 +72,16 @@ restent modifiables par leur propriétaire ; à déplacer vers une fonction serv
 
 Les missions sont lisibles par tous, y compris celles en attente de modération et l'adresse saisie : n'y mettez
 pas d'information sensible.
+
+## Administration
+
+Le panneau admin s'ouvre sur « À traiter » : missions à valider, reversements à faire aux artisans, certifications en
+attente, et (pour information) missions terminées en attente de paiement du client. L'onglet « Paiements » affiche
+l'encaissé, les commissions et les reversements. « Reversement effectué » passe par `POST /api/admin/payments`
+(action `markPayoutSent`) : réservé au label `admin`, uniquement sur une mission payée, une seule fois.
+
+Garde-fous : une mission en cours, terminée ou payée ne peut plus être validée, refusée, clôturée ni supprimée depuis
+l'admin, et une offre retenue ne peut pas être supprimée.
 
 ## Administrateur
 

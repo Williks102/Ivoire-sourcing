@@ -76,6 +76,8 @@ export interface JobPost {
   commissionAmount?: number;
   artisanPayout?: number;
   payoutStatus?: 'pending' | 'sent';
+  payoutSentAt?: string;
+  payoutReference?: string;
 }
 
 export interface Application {

@@ -104,6 +104,7 @@ const COLLECTIONS: CollectionDef[] = [
       // Renseignés par le serveur :
       s('assignedArtisanId', 64), s('assignedApplicationId', 64), i('agreedPrice'), s('assignedAt', 40), s('completedAt', 40),
       s('paidAt', 40), s('paymentReference', 64), i('commissionAmount'), i('artisanPayout'), s('payoutStatus', 20),
+      s('payoutSentAt', 40), s('payoutReference', 64),
       // Anciennes annonces de recrutement / création admin :
       s('salaryRange', 60), b('isPremium'),
     ],

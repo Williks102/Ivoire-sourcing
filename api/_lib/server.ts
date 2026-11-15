@@ -72,6 +72,15 @@ export const db = {
     const { database } = config();
     return appwrite('POST', `/tablesdb/${database}/tables/${collection}/rows`, { rowId: id, data, permissions });
   },
+  /** Les plus récents d'abord. `offset` permet la pagination. */
+  async listRecent(collection: string, limit = 100, offset = 0) {
+    const { database } = config();
+    const order = encodeURIComponent(JSON.stringify({ method: 'orderDesc', attribute: '$createdAt' }));
+    const lim = encodeURIComponent(JSON.stringify({ method: 'limit', values: [limit] }));
+    const off = encodeURIComponent(JSON.stringify({ method: 'offset', values: [offset] }));
+    const result = await appwrite('GET', `/tablesdb/${database}/tables/${collection}/rows?queries[]=${order}&queries[]=${lim}&queries[]=${off}`);
+    return { rows: result.rows as any[], total: result.total as number };
+  },
   async listEqual(collection: string, attribute: string, value: string) {
     const { database } = config();
     const q = encodeURIComponent(JSON.stringify({ method: 'equal', attribute, values: [value] }));
@@ -119,6 +128,11 @@ export function splitPrice(total: number) {
   const amount = Math.round(total);
   const commission = Math.round(amount * commissionRate());
   return { amount, commission, payout: amount - commission };
+}
+
+/** Réservé aux comptes portant le label Appwrite `admin`. */
+export function requireAdmin(user: { labels: string[] }) {
+  if (!user.labels.includes('admin')) throw new HttpError(403, 'Réservé aux administrateurs.');
 }
 
 export function readBody(req: VercelRequest): Record<string, any> {
