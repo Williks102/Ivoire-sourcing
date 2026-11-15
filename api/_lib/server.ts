@@ -57,26 +57,27 @@ async function appwrite(method: string, path: string, body?: unknown, extraHeade
   return response.json();
 }
 
+// API « Tables » d'Appwrite (collection = table, document = ligne).
 export const db = {
   async get(collection: string, id: string) {
     const { database } = config();
-    return appwrite('GET', `/databases/${database}/collections/${collection}/documents/${encodeURIComponent(id)}`);
+    return appwrite('GET', `/tablesdb/${database}/tables/${collection}/rows/${encodeURIComponent(id)}`);
   },
   async update(collection: string, id: string, data: Record<string, unknown>) {
     const { database } = config();
-    return appwrite('PATCH', `/databases/${database}/collections/${collection}/documents/${encodeURIComponent(id)}`, { data });
+    return appwrite('PATCH', `/tablesdb/${database}/tables/${collection}/rows/${encodeURIComponent(id)}`, { data });
   },
   /** `id` peut valoir 'unique()' pour laisser Appwrite générer l'identifiant. `permissions` : ex. ['read("user:abc")']. */
   async create(collection: string, id: string, data: Record<string, unknown>, permissions: string[] = []) {
     const { database } = config();
-    return appwrite('POST', `/databases/${database}/collections/${collection}/documents`, { documentId: id, data, permissions });
+    return appwrite('POST', `/tablesdb/${database}/tables/${collection}/rows`, { rowId: id, data, permissions });
   },
   async listEqual(collection: string, attribute: string, value: string) {
     const { database } = config();
     const q = encodeURIComponent(JSON.stringify({ method: 'equal', attribute, values: [value] }));
     const limit = encodeURIComponent(JSON.stringify({ method: 'limit', values: [100] }));
-    const result = await appwrite('GET', `/databases/${database}/collections/${collection}/documents?queries[]=${q}&queries[]=${limit}`);
-    return result.documents as any[];
+    const result = await appwrite('GET', `/tablesdb/${database}/tables/${collection}/rows?queries[]=${q}&queries[]=${limit}`);
+    return result.rows as any[];
   },
 };
 
