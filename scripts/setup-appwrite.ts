@@ -4,8 +4,7 @@
  *
  * Prérequis (à faire une fois dans la console Appwrite) :
  *   1. Créer le projet.
- *   2. Créer une clé API avec les droits : databases.read/write, collections.read/write,
- *      attributes.read/write, indexes.read/write, buckets.read/write.
+ *   2. Créer une clé API avec les catégories « Databases » (tables, columns, indexes, rows) et « Storage » cochées.
  *   3. Ajouter une plateforme Web (le nom de domaine de votre site) pour autoriser la connexion.
  *
  * Usage :
@@ -143,7 +142,7 @@ const COLLECTIONS: CollectionDef[] = [
 ];
 
 async function createAttribute(collectionId: string, attr: Attr) {
-  const base = `/databases/${DATABASE_ID}/collections/${collectionId}/attributes`;
+  const base = `/tablesdb/${DATABASE_ID}/tables/${collectionId}/columns`;
   const label = `${collectionId}.${attr.key}`;
   if (attr.type === 'string') return ensure(label, 'POST', `${base}/string`, { key: attr.key, size: attr.size, required: false, array: !!attr.array });
   if (attr.type === 'integer') return ensure(label, 'POST', `${base}/integer`, { key: attr.key, required: false, min: 0, max: 2_000_000_000 });
@@ -154,8 +153,8 @@ async function createAttribute(collectionId: string, attr: Attr) {
 /** Les attributs sont créés en asynchrone : on attend qu'ils soient « available » avant de créer les index. */
 async function waitForAttributes(collectionId: string, keys: string[]) {
   for (let attempt = 0; attempt < 60; attempt++) {
-    const { data } = await call('GET', `/databases/${DATABASE_ID}/collections/${collectionId}/attributes?queries[]=${encodeURIComponent(JSON.stringify({ method: 'limit', values: [100] }))}`);
-    const byKey = new Map<string, string>((data.attributes || []).map((a: any) => [a.key, a.status]));
+    const { data } = await call('GET', `/tablesdb/${DATABASE_ID}/tables/${collectionId}/columns?queries[]=${encodeURIComponent(JSON.stringify({ method: 'limit', values: [100] }))}`);
+    const byKey = new Map<string, string>((data.columns || []).map((a: any) => [a.key, a.status]));
     const pending = keys.filter((k) => byKey.get(k) !== 'available');
     const failed = keys.filter((k) => byKey.get(k) === 'failed');
     if (failed.length) throw new Error(`Attributs en échec sur ${collectionId} : ${failed.join(', ')}`);
@@ -169,24 +168,27 @@ async function main() {
   console.log(`Projet ${project} sur ${endpoint}`);
 
   console.log('\nBase de données');
-  await ensure(`base ${DATABASE_ID}`, 'POST', '/databases', { databaseId: DATABASE_ID, name: 'IvoireSource' });
+  // On teste l'existence avant de créer : certains plans limitent le nombre de bases et répondent 403 même pour un id existant.
+  const existing = await call('GET', `/tablesdb/${DATABASE_ID}`);
+  if (existing.status === 200) console.log(`  = base ${DATABASE_ID} (déjà présente)`);
+  else await ensure(`base ${DATABASE_ID}`, 'POST', '/tablesdb', { databaseId: DATABASE_ID, name: 'IvoireSource' });
 
   for (const col of COLLECTIONS) {
     console.log(`\nCollection ${col.id}`);
-    await ensure(`collection ${col.id}`, 'POST', `/databases/${DATABASE_ID}/collections`, {
-      collectionId: col.id, name: col.name, permissions: col.permissions, documentSecurity: col.documentSecurity,
+    await ensure(`collection ${col.id}`, 'POST', `/tablesdb/${DATABASE_ID}/tables`, {
+      tableId: col.id, name: col.name, permissions: col.permissions, rowSecurity: col.documentSecurity,
     });
     // Réapplique toujours les permissions (si la collection existait déjà avec d'autres droits).
-    await ensure(`permissions ${col.id}`, 'PUT', `/databases/${DATABASE_ID}/collections/${col.id}`, {
-      name: col.name, permissions: col.permissions, documentSecurity: col.documentSecurity, enabled: true,
+    await ensure(`permissions ${col.id}`, 'PUT', `/tablesdb/${DATABASE_ID}/tables/${col.id}`, {
+      name: col.name, permissions: col.permissions, rowSecurity: col.documentSecurity, enabled: true,
     });
 
     for (const attr of col.attributes) await createAttribute(col.id, attr);
     await waitForAttributes(col.id, col.attributes.map((a) => a.key));
 
     for (const idx of col.indexes) {
-      await ensure(`index ${col.id}.${idx.key}`, 'POST', `/databases/${DATABASE_ID}/collections/${col.id}/indexes`, {
-        key: idx.key, type: 'key', attributes: idx.attributes,
+      await ensure(`index ${col.id}.${idx.key}`, 'POST', `/tablesdb/${DATABASE_ID}/tables/${col.id}/indexes`, {
+        key: idx.key, type: 'key', columns: idx.attributes,
       });
     }
   }
