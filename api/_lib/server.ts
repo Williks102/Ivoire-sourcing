@@ -21,7 +21,7 @@ export const MISSION_STATUS = {
 } as const;
 
 export class HttpError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(public status: number, message: string, public headers: Record<string, string> = {}) {
     super(message);
   }
 }
@@ -63,9 +63,9 @@ export const db = {
     const { database } = config();
     return appwrite('GET', `/tablesdb/${database}/tables/${collection}/rows/${encodeURIComponent(id)}`);
   },
-  async update(collection: string, id: string, data: Record<string, unknown>) {
+  async update(collection: string, id: string, data: Record<string, unknown>, permissions?: string[]) {
     const { database } = config();
-    return appwrite('PATCH', `/tablesdb/${database}/tables/${collection}/rows/${encodeURIComponent(id)}`, { data });
+    return appwrite('PATCH', `/tablesdb/${database}/tables/${collection}/rows/${encodeURIComponent(id)}`, permissions ? { data, permissions } : { data });
   },
   async remove(collection: string, id: string) {
     const { database } = config();
@@ -107,6 +107,47 @@ export const db = {
       if (rows.length < 100) break;
     }
     return all;
+  },
+};
+
+/** Bucket des pièces justificatives (isolé : aucune permission côté navigateur, fichiers lisibles par leur propriétaire et les admins). */
+export const bucketId = () => process.env.APPWRITE_BUCKET_ID || 'cv';
+
+export const storage = {
+  /** Envoie un fichier. `permissions` : ex. ['read("user:abc")', 'read("label:admin")']. */
+  async upload(name: string, bytes: Uint8Array, mime: string, permissions: string[]) {
+    const { endpoint, project, key } = config();
+    const form = new FormData();
+    form.append('fileId', 'unique()');
+    form.append('file', new Blob([bytes], { type: mime }), name);
+    permissions.forEach((p) => form.append('permissions[]', p));
+    const response = await fetch(`${endpoint}/storage/buckets/${bucketId()}/files`, {
+      method: 'POST',
+      headers: { 'X-Appwrite-Project': project, 'X-Appwrite-Key': key },
+      body: form,
+    });
+    if (!response.ok) throw new HttpError(502, `Appwrite Storage upload -> ${response.status}: ${(await response.text()).slice(0, 200)}`);
+    return response.json();
+  },
+  async meta(fileId: string) {
+    return appwrite('GET', `/storage/buckets/${bucketId()}/files/${encodeURIComponent(fileId)}`);
+  },
+  async download(fileId: string): Promise<Uint8Array> {
+    const { endpoint, project, key } = config();
+    const response = await fetch(`${endpoint}/storage/buckets/${bucketId()}/files/${encodeURIComponent(fileId)}/download`, {
+      headers: { 'X-Appwrite-Project': project, 'X-Appwrite-Key': key },
+    });
+    if (response.status === 404) throw new HttpError(404, 'Fichier introuvable.');
+    if (!response.ok) throw new HttpError(502, `Appwrite Storage download -> ${response.status}`);
+    return new Uint8Array(await response.arrayBuffer());
+  },
+  async remove(fileId: string) {
+    const { endpoint, project, key } = config();
+    const response = await fetch(`${endpoint}/storage/buckets/${bucketId()}/files/${encodeURIComponent(fileId)}`, {
+      method: 'DELETE',
+      headers: { 'X-Appwrite-Project': project, 'X-Appwrite-Key': key },
+    });
+    if (!response.ok && response.status !== 404) throw new HttpError(502, `Appwrite Storage delete -> ${response.status}`);
   },
 };
 

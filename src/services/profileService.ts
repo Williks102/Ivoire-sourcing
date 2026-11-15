@@ -1,9 +1,9 @@
-import { Models, Permission, Role } from 'appwrite';
+import { Models } from 'appwrite';
 import { databases, APPWRITE_CONFIG } from '../lib/appwrite';
+import { missionService } from './missionService';
 import { UserProfile, UserRole } from '../types';
 
 const DB = APPWRITE_CONFIG.DATABASE_ID;
-const DEFAULT_AVATAR = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=200&auto=format&fit=crop';
 
 /**
  * Le profil vit dans la collection `users`, avec pour identifiant l'id du compte Appwrite.
@@ -35,32 +35,14 @@ export const profileService = {
     }
   },
 
-  /** Charge le profil, ou le crée au premier passage. `role` ne sert qu'à la création. */
+  /**
+   * Charge le profil, ou le crée au premier passage. La création et la remise en ordre se font côté SERVEUR :
+   * le navigateur n'écrit plus dans la table des profils (il ne peut donc pas se déclarer certifié ou administrateur).
+   * `role` ne sert qu'à la création.
+   */
   async ensure(user: Models.User<Models.Preferences>, role: UserRole = 'candidate', displayName?: string): Promise<UserProfile> {
-    let profile = await this.get(user.$id);
-    if (!profile) {
-      const safeRole: UserRole = role === 'employer' ? 'employer' : 'candidate';
-      const data = {
-        uid: user.$id,
-        role: safeRole,
-        displayName: displayName || user.name || user.email?.split('@')[0] || 'Utilisateur',
-        email: user.email || '',
-        photoURL: DEFAULT_AVATAR,
-        skills: [],
-        isVerified: false,
-        isPremium: false,
-        averageRating: 0,
-        reviewCount: 0,
-        createdAt: new Date().toISOString(),
-      };
-      // Lecture/modification réservées au propriétaire (et aux admins via les permissions de collection).
-      await databases.createDocument(DB, 'users', user.$id, data, [
-        Permission.read(Role.user(user.$id)),
-        Permission.update(Role.user(user.$id)),
-      ]);
-      profile = data as UserProfile;
-    }
-    // Le rôle admin vient UNIQUEMENT du label Appwrite : un « admin » écrit dans le document est ignoré.
+    const { profile } = await missionService.ensureProfile(role === 'employer' ? 'employer' : 'candidate', displayName);
+    // Le rôle admin vient UNIQUEMENT du label Appwrite (vérifié aussi par le serveur).
     if (this.isAdmin(user)) return { ...profile, role: 'admin' };
     return profile.role === 'admin' ? { ...profile, role: 'candidate' } : profile;
   },

@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { protect, sendError } from './_lib/security.js';
 import { z } from 'zod';
-import { HttpError, MISSION_STATUS, authenticate, db, readBody } from './_lib/server.js';
+import { HttpError, MISSION_STATUS, db, readBody } from './_lib/server.js';
 import { QuoteLine, parseQuote, quoteInputSchema, quoteNumber, quoteProblem, quoteTotal } from './_lib/quote.js';
 import { currentPrice, readHistory } from './_lib/negotiation.js';
 import { CATEGORY_LABELS } from './_lib/outreach.js';
@@ -47,7 +48,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Méthode non autorisée' });
 
   try {
-    const user = await authenticate(req);
+    const user = await protect(req, { name: 'documents', max: 30, windowSec: 60 });
     const parsed = Schema.safeParse(readBody(req));
     if (!parsed.success) return res.status(400).json({ error: 'Données invalides' });
     const input = parsed.data;
@@ -139,8 +140,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return res.status(200).json({ success: true, filename, pdfBase64: Buffer.from(bytes).toString('base64') });
   } catch (error: any) {
-    if (error instanceof HttpError) return res.status(error.status).json({ error: error.message });
-    console.error('[documents]', error?.message);
-    return res.status(500).json({ error: 'Erreur serveur.' });
+    return sendError(res, error, '[documents]');
   }
 }

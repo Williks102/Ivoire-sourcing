@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { audit, protect, rateLimit, sendError } from '../_lib/security.js';
 import { z } from 'zod';
-import { HttpError, MISSION_STATUS, authenticate, db, readBody, requireAdmin } from '../_lib/server.js';
+import { HttpError, MISSION_STATUS, db, readBody, requireAdmin } from '../_lib/server.js';
 import { buildTemplateMessage, draftMessageWithAi, matchArtisans } from '../_lib/outreach.js';
 import { aiAvailable } from '../_lib/ai.js';
 
@@ -30,7 +31,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Méthode non autorisée' });
 
   try {
-    const user = await authenticate(req);
+    const user = await protect(req, { name: 'admin-outreach', max: 60, windowSec: 60 });
     requireAdmin(user);
     const parsed = Schema.safeParse(readBody(req));
     if (!parsed.success) return res.status(400).json({ error: 'Données invalides' });
@@ -48,6 +49,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (input.action === 'draftMessage') {
+      // L'IA a un quota à part (coût) : 10 brouillons par minute et par administrateur.
+      if (input.useAi) await rateLimit(`u:outreach-ai:${user.$id}`, 10, 60);
       const link = missionLink(mission.$id);
       const ai = input.useAi ? await draftMessageWithAi(mission, link) : null;
       return res.status(200).json({ success: true, message: ai || buildTemplateMessage(mission, link), source: ai ? 'ai' : 'template' });
@@ -63,10 +66,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       adminId: user.$id,
       createdAt: new Date().toISOString(),
     });
+    await audit(req, user.$id, 'admin.outreach.contact', mission.$id, { artisan: artisan.$id });
     return res.status(200).json({ success: true });
   } catch (error: any) {
-    if (error instanceof HttpError) return res.status(error.status).json({ error: error.message });
-    console.error('[admin/outreach]', error?.message);
-    return res.status(500).json({ error: 'Erreur serveur.' });
+    return sendError(res, error, '[admin/outreach]');
   }
 }
