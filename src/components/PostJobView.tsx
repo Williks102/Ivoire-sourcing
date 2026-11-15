@@ -1,162 +1,145 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import { UserProfile } from '../types';
-import { CITIES, CATEGORIES } from '../constants';
-import { databases, APPWRITE_CONFIG } from '../lib/appwrite';
-import { ID } from 'appwrite';
-
+import { CITIES, CATEGORIES, COMMISSION_RATE } from '../constants';
+import { missionService } from '../services/missionService';
 
 interface PostJobViewProps {
   onPosted: () => void;
   profile: UserProfile | null;
 }
 
+/** Publication d'une mission par un client. Aucun paiement à la publication : on paie à la fin. */
 export function PostJobView({ onPosted, profile }: PostJobViewProps) {
   const [formData, setFormData] = useState({
     title: '',
     description: '',
-    category: 'nounou' as any,
+    category: CATEGORIES[0].id,
     location: CITIES[0],
-    salaryRange: '',
-    isPremium: false
+    address: '',
+    scheduledDate: '',
+    budget: '',
   });
   const [submitting, setSubmitting] = useState(false);
+  const [notice, setNotice] = useState('');
 
   if (!profile) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const budget = Math.round(Number(formData.budget.replace(/\s/g, '')));
+    if (!Number.isFinite(budget) || budget <= 0) {
+      setNotice('Indiquez un budget valide en FCFA.');
+      return;
+    }
     setSubmitting(true);
+    setNotice('');
     try {
-      let approved = true;
-      let reason = "";
-
-      // Safe API fetch with graceful fallback for static hostings (like Vercel)
+      // Modération : en cas d'échec ou d'indisponibilité, la mission part en revue manuelle (jamais validée d'office).
+      let status: 'approved' | 'pending' = 'pending';
       try {
         const modRes = await fetch('/api/moderation/check-job', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title: formData.title, description: formData.description })
+          body: JSON.stringify({ title: formData.title, description: formData.description }),
         });
         if (modRes.ok) {
-          const modData = await modRes.json();
-          approved = !!modData.approved;
-          reason = modData.reason || "";
-        } else {
-          console.warn('[Vercel Mode] Moderation API server not running or returned an issue. Running offline/bypass mode.');
+          const mod = await modRes.json();
+          if (mod.approved) status = 'approved';
+          else if (!mod.review) {
+            setNotice('Annonce refusée par la modération : ' + (mod.reason || 'contenu non conforme.'));
+            return;
+          }
         }
       } catch (apiErr) {
-        console.warn('[Vercel/Static Custom Bypass] Bypassing AI moderation check because backend endpoints are not active on static server:', apiErr);
+        console.warn('Modération indisponible, passage en revue manuelle:', apiErr);
       }
 
-      if (!approved) {
-        alert("Modération d'annonce refusée : " + reason);
-        setSubmitting(false);
-        return;
-      }
-
-      if (formData.isPremium) {
-        try {
-          await fetch('/api/payments/checkout-premium', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ employerId: profile.uid })
-          });
-        } catch (apiErr) {
-          console.warn('[Vercel/Static Custom Bypass] Simulating premium checkout callback (API server offline):', apiErr);
-        }
-      }
-
-      const isDemoMode = profile.uid.startsWith('demo-');
-      const jobData = {
-        ...formData,
+      await missionService.createMission({
         employerId: profile.uid,
-        status: 'approved',
-        createdAt: new Date().toISOString()
-      };
+        title: formData.title.trim(),
+        description: formData.description.trim(),
+        category: formData.category,
+        location: formData.location,
+        address: formData.address.trim(),
+        scheduledDate: formData.scheduledDate || undefined,
+        budget,
+        status,
+      } as any);
 
-      if (isDemoMode) {
-        console.log("[SIMULATION] Saving job to localStorage");
-        const localJobs = JSON.parse(localStorage.getItem('offline_jobs') || '[]');
-        localJobs.push({ id: 'local-job-' + Math.random().toString(36).substring(7), ...jobData });
-        localStorage.setItem('offline_jobs', JSON.stringify(localJobs));
-        onPosted();
-        return;
+      if (status === 'pending') {
+        alert("Votre mission est en cours de vérification. Elle sera publiée dès validation.");
       }
-
-      await databases.createDocument(APPWRITE_CONFIG.DATABASE_ID, 'jobs', ID.unique(), jobData);
       onPosted();
     } catch (err: any) {
-      console.error("Erreur lors de la création de l'annonce d'emploi:", err);
-      alert("Une erreur s'est produite lors de la publication de l'offre d'emploi sur Backend. Assurez-vous d'avoir configuré vos droits de base de données Backend et d'être connecté.");
+      console.error('Publication de la mission impossible:', err);
+      setNotice("La mission n'a pas pu être publiée. Vérifiez votre connexion et réessayez.");
     } finally {
       setSubmitting(false);
     }
   };
 
+  const field = 'w-full bg-slate-50 px-4 py-3 rounded-xl border-none focus:ring-1 focus:ring-emerald-500 outline-none font-medium text-sm';
+  const label = 'text-[10px] uppercase font-bold text-slate-400 mb-1.5 block tracking-widest';
+
   return (
-    <motion.div 
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="flex-1 overflow-y-auto px-4 md:px-8 pt-6 md:pt-12 pb-20 bg-slate-50"
-    >
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+      className="flex-1 overflow-y-auto px-4 md:px-8 pt-6 md:pt-12 pb-20 bg-slate-50">
       <div className="max-w-xl mx-auto bg-white p-6 md:p-10 rounded-3xl border border-slate-100 shadow-xl">
-        <h2 className="text-2xl md:text-3xl font-black mb-8 text-slate-900 tracking-tight">Nouvelle annonce</h2>
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="space-y-4">
-             <div>
-                <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block tracking-widest">Intitulé du poste</label>
-                <input required className="w-full bg-slate-50 px-4 py-3 rounded-xl border-none focus:ring-1 focus:ring-emerald-500 outline-none font-medium placeholder:text-slate-300" placeholder="ex: Chauffeur VTC Privé" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} />
-             </div>
-             
-             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                   <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block tracking-widest">Catégorie</label>
-                   <select className="w-full bg-slate-50 px-4 py-3 rounded-xl border-none text-sm font-medium focus:ring-1 focus:ring-emerald-500 outline-none h-12" value={formData.category} onChange={e => setFormData({...formData, category: e.target.value as any})}>
-                      {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
-                   </select>
-                </div>
-                <div>
-                   <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block tracking-widest">Ville</label>
-                   <select className="w-full bg-slate-50 px-4 py-3 rounded-xl border-none text-sm font-medium focus:ring-1 focus:ring-emerald-500 outline-none h-12" value={formData.location} onChange={e => setFormData({...formData, location: e.target.value})}>
-                      {CITIES.map(c => <option key={c} value={c}>{c}</option>)}
-                   </select>
-                </div>
-             </div>
+        <h2 className="text-2xl md:text-3xl font-black mb-2 text-slate-900 tracking-tight">Publier une mission</h2>
+        <p className="text-xs text-slate-400 mb-8">Gratuit. Vous recevez des offres d'artisans et vous ne payez qu'à la fin de la mission.</p>
 
-             <div>
-                <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block tracking-widest">Rémunération mensuelle</label>
-                <input required className="w-full bg-slate-50 px-4 py-3 rounded-xl border-none focus:ring-1 focus:ring-emerald-500 outline-none font-medium h-12" placeholder="ex: 120 000" value={formData.salaryRange} onChange={e => setFormData({...formData, salaryRange: e.target.value})} />
-             </div>
-
-             <div>
-                <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block tracking-widest">Conditions & Profil</label>
-                <textarea required rows={4} className="w-full bg-slate-50 px-4 py-3 rounded-xl border-none focus:ring-1 focus:ring-emerald-500 outline-none font-medium text-sm" placeholder="Description détaillée..." value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} />
-             </div>
-
-             <div className="bg-emerald-50 p-4 rounded-xl flex items-center justify-between border border-emerald-100">
-                <div className="flex items-center gap-3">
-                   <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center text-white font-black text-xs italic shrink-0">P</div>
-                   <div>
-                      <p className="text-xs font-bold text-emerald-900">Activer le Boost Premium</p>
-                      <p className="text-[9px] text-emerald-600 font-medium">Annonce taguée et remontée en tête de liste (5 000 FCFA)</p>
-                   </div>
-                </div>
-                <input 
-                  type="checkbox" 
-                  className="w-6 h-6 rounded border-emerald-200 text-emerald-600 focus:ring-emerald-500 grow-0 shrink-0"
-                  checked={formData.isPremium}
-                  onChange={e => setFormData({...formData, isPremium: e.target.checked})}
-                />
-             </div>
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div>
+            <label className={label}>Que faut-il faire ?</label>
+            <input required className={field} placeholder="ex: Réparer une fuite sous l'évier" value={formData.title} onChange={e => setFormData({ ...formData, title: e.target.value })} />
           </div>
 
-          <button 
-            type="submit" 
-            disabled={submitting}
-            className="w-full bg-slate-900 text-white font-bold py-4 rounded-xl hover:bg-black transition-all flex items-center justify-center shadow-lg shadow-slate-200"
-          >
-            {submitting ? <div className="animate-spin h-5 w-5 border-t-2 border-white rounded-full"></div> : 'Poster mon annonce'}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className={label}>Métier</label>
+              <select className={field + ' h-12'} value={formData.category} onChange={e => setFormData({ ...formData, category: e.target.value })}>
+                {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className={label}>Ville</label>
+              <select className={field + ' h-12'} value={formData.location} onChange={e => setFormData({ ...formData, location: e.target.value })}>
+                {CITIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className={label}>Quartier</label>
+            <input className={field} placeholder="ex: Cocody, Riviera 3" value={formData.address} onChange={e => setFormData({ ...formData, address: e.target.value })} />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className={label}>Budget (FCFA)</label>
+              <input required inputMode="numeric" className={field + ' h-12'} placeholder="ex: 30000" value={formData.budget} onChange={e => setFormData({ ...formData, budget: e.target.value })} />
+            </div>
+            <div>
+              <label className={label}>Date souhaitée</label>
+              <input type="date" className={field + ' h-12'} value={formData.scheduledDate} onChange={e => setFormData({ ...formData, scheduledDate: e.target.value })} />
+            </div>
+          </div>
+
+          <div>
+            <label className={label}>Détails de la mission</label>
+            <textarea required rows={4} className={field} placeholder="Décrivez le travail, l'état actuel, le matériel disponible…" value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} />
+          </div>
+
+          <p className="text-[11px] text-slate-400 bg-slate-50 rounded-xl p-3">
+            Paiement sécurisé en fin de mission via Mobile Money. Une commission de {Math.round(COMMISSION_RATE * 100)} % est incluse dans le prix convenu : vous ne payez jamais plus que ce prix.
+          </p>
+
+          {notice && <p className="text-xs font-bold text-rose-600">{notice}</p>}
+
+          <button type="submit" disabled={submitting}
+            className="w-full bg-slate-900 text-white font-bold py-4 rounded-xl hover:bg-black transition-all flex items-center justify-center shadow-lg shadow-slate-200 disabled:opacity-60">
+            {submitting ? <div className="animate-spin h-5 w-5 border-t-2 border-white rounded-full"></div> : 'Publier ma mission'}
           </button>
         </form>
       </div>

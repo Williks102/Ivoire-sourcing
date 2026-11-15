@@ -42,29 +42,35 @@ export default async function (context: Context) {
 
     log(`Nouvelle candidature reçue: Job ${jobId} - Candidat ${candidateId}`);
 
-    // 3. Récupérer les informations complémentaires (ex: L'offre d'emploi pour connaître l'email de l'employeur)
+    // 3. Retrouver la mission et l'adresse e-mail du client (profil dans la collection `users`)
     const databaseId = process.env.APPWRITE_DATABASE_ID || '';
     const job = await databases.getDocument(databaseId, 'jobs', jobId);
-    
-    // (Optionnel) Récupérer les infos du candidat depuis votre collection 'users_profiles'
+    const client_ = await databases.getDocument(databaseId, 'users', job.employerId);
+    const clientEmail = client_.email;
+    if (!clientEmail) {
+      log(`Pas d'e-mail pour le client ${job.employerId} : notification ignorée.`);
+      return res.json({ success: true, message: 'Aucun e-mail à notifier.' });
+    }
+
+    const price = applicationEvent.proposedPrice
+      ? `${Number(applicationEvent.proposedPrice).toLocaleString('fr-FR')} FCFA`
+      : 'prix non précisé';
 
     // 4. Envoi de l'email via Resend
-    const employerEmail = job.company_email || 'contact@votre-domaine.com'; 
-
     await resend.emails.send({
-      from: 'Candidatures <candidatures@votre-domaine.com>',
-      to: [employerEmail],
-      subject: `Nouvelle candidature pour : ${job.title}`,
+      from: process.env.MAIL_FROM || 'IvoireSource <notifications@votre-domaine.com>',
+      to: [clientEmail],
+      subject: `Nouvelle offre pour : ${job.title}`,
       html: `
         <h2>Bonjour,</h2>
-        <p>Un nouveau candidat vient de postuler à votre offre <strong>${job.title}</strong>.</p>
-        <p>Connectez-vous à votre tableau de bord pour consulter son profil et son CV.</p>
+        <p>Un artisan vient de vous envoyer une offre (<strong>${price}</strong>) pour votre mission <strong>${job.title}</strong>.</p>
+        <p>Connectez-vous à votre tableau de bord pour comparer les offres et choisir. Vous ne payez qu'à la fin de la mission.</p>
         <br/>
         <p>L'équipe IvoireSource</p>
       `
     });
 
-    log(`Email envoyé avec succès à ${employerEmail}`);
+    log(`Email envoyé avec succès à ${clientEmail}`);
 
     return res.json({ success: true, message: 'Email envoyé avec succès.' });
 

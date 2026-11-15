@@ -19,14 +19,16 @@ import {
 import { Models } from 'appwrite';
 import { authService } from './services/authService';
 import { sourcingService } from './services/sourcingService';
-import client, { APPWRITE_CONFIG } from './lib/appwrite';
+import { profileService } from './services/profileService';
+import client, { databases, APPWRITE_CONFIG } from './lib/appwrite';
+import { missionService } from './services/missionService';
 import { UserProfile, JobPost, UserRole } from './types';
 import { LandingView } from './components/LandingView';
 import { JobListView, JobDetailView } from './components/JobListView';
 import { PostJobView } from './components/PostJobView';
 import { DashboardView } from './components/DashboardView';
 import { ApplicationSuccessView } from './components/ApplicationSuccessView';
-import { ApplicationFormModal } from './components/ApplicationFormModal';
+import { OfferFormModal } from './components/OfferFormModal';
 
 export default function App() {
   const [user, setUser] = useState<Models.User<Models.Preferences> | null>(null);
@@ -50,7 +52,7 @@ export default function App() {
   const [selectedCity, setSelectedCity] = useState<string>('');
   const [jobs, setJobs] = useState<JobPost[]>([]);
   const [selectedJob, setSelectedJob] = useState<JobPost | null>(null);
-  const [dashboardTab, setDashboardTab] = useState<'overview' | 'verification' | 'my-jobs' | 'applications' | 'admin' | 'browse-candidates' | 'profile'>('overview');
+  const [dashboardTab, setDashboardTab] = useState<'overview' | 'verification' | 'my-jobs' | 'applications' | 'admin' | 'profile'>('overview');
   const [showGeneralLoginModal, setShowGeneralLoginModal] = useState(false);
   const [modalActiveTab, setModalActiveTab] = useState<'login' | 'signup'>('login');
   const [modalPreselectedRole, setModalPreselectedRole] = useState<'candidate' | 'employer'>('candidate');
@@ -91,9 +93,8 @@ export default function App() {
           addToast(`⚡ Annonce validée : "${payload.title || 'Nouvelle annonce'}" est maintenant en ligne !`, 'success');
           fetchJobs();
         }
-        if (event.events.some(e => e.endsWith('.update')) && payload?.isPremium) {
-          addToast('💳 Boost Premium activé pour le recruteur !', 'success');
-          fetchJobs();
+        if (event.events.some(e => e.endsWith('.update')) && payload?.status === 'paid') {
+          addToast(`💳 Paiement reçu pour la mission "${payload.title || ''}".`, 'success');
         }
       }
     );
@@ -103,7 +104,7 @@ export default function App() {
       (event) => {
         const payload = event.payload as any;
         if (event.events.some(e => e.endsWith('.update')) && payload?.isVerified) {
-          addToast('🌟 Le profil candidat est maintenant certifié !', 'success');
+          addToast('🌟 Le profil artisan est maintenant certifié !', 'success');
         }
       }
     );
@@ -129,7 +130,7 @@ export default function App() {
     // Auto-login of saved demo/bypass connections for smooth offline testing
     const savedDemoUser = localStorage.getItem('demo_user');
     const savedDemoProfile = localStorage.getItem('demo_profile');
-    if (savedDemoUser && savedDemoProfile) {
+    if (import.meta.env.DEV && savedDemoUser && savedDemoProfile) {
       setUser(JSON.parse(savedDemoUser));
       setProfile(JSON.parse(savedDemoProfile));
       setLoading(false);
@@ -147,42 +148,8 @@ export default function App() {
       setUser(u);
       try {
         if (u) {
-          let profileData: UserProfile | null = null;
-          try {
-            const docSnap = { exists: () => false, data: () => null }; // MOCK
-            if (docSnap.exists()) {
-              profileData = docSnap.data() as UserProfile;
-              localStorage.setItem(`profile_${u.$id}`, JSON.stringify(profileData));
-            }
-          } catch (getDocErr: any) {
-            console.warn("[Backend] getDoc failed or client offline. Proceeding to local storage fallback:", getDocErr);
-            const cached = localStorage.getItem(`profile_${u.$id}`);
-            if (cached) {
-              profileData = JSON.parse(cached);
-            } else {
-              // Graceful real-time fallback profile
-              profileData = {
-                uid: u.$id,
-                role: 'candidate',
-                displayName: u.name || 'Utilisateur Source',
-                email: u.email || '',
-                photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=200&auto=format&fit=crop',
-                skills: [],
-                isVerified: false,
-                isPremium: false,
-                averageRating: 0,
-                reviewCount: 0,
-                createdAt: new Date().toISOString()
-              };
-            }
-            setIsOffline(true);
-          }
-          if (profileData) {
-            if (u.email === 'koffiw4@gmail.com') {
-              profileData.role = 'admin';
-            }
-            setProfile(profileData);
-          }
+          const profileData = await profileService.ensure(u);
+          setProfile(profileData);
         } else {
           setProfile(null);
         }
@@ -244,60 +211,14 @@ export default function App() {
       }
       setIsOffline(false);
     } catch (err: any) {
-      console.warn("Running in local simulation mode for jobs list:", err);
-      let allLocalJobs: JobPost[] = [];
-      const localJobsStr = localStorage.getItem('offline_jobs');
-      
-      if (localJobsStr) {
-        allLocalJobs = JSON.parse(localJobsStr);
-      } else {
-        const demoJobs: JobPost[] = [
-          {
-            id: 'demo-0',
-            employerId: 'system',
-            title: 'Nounou Plein Temps (Cocody)',
-            description: 'Recherche nounou expérimentée pour garde de deux jumeaux de 2 ans. Logée ou non-logée. Références exigées.',
-            category: 'nounou',
-            location: 'Abidjan',
-            salaryRange: '120 000 FCFA',
-            status: 'approved',
-            isPremium: true,
-            createdAt: new Date().toISOString()
-          },
-          {
-             id: 'demo-1',
-             employerId: 'system',
-             title: 'Chauffeur Professionnel VTC',
-             description: 'Besoin d un chauffeur maitrisant la zone de Marcory et Plateau. Conduite défensive exigée.',
-             category: 'chauffeur',
-             location: 'Abidjan',
-             salaryRange: '150 000 FCFA',
-             status: 'approved',
-             isPremium: false,
-             createdAt: new Date().toISOString()
-          }
-        ];
-        allLocalJobs = demoJobs;
-        localStorage.setItem('offline_jobs', JSON.stringify(demoJobs));
-      }
-
-      // Filter local simulation jobs by category and city to match backend logic
-      let filtered = [...allLocalJobs];
-      if (selectedCategory) {
-        filtered = filtered.filter(j => j.category === selectedCategory);
-      }
-      if (selectedCity) {
-        filtered = filtered.filter(j => j.location === selectedCity);
-      }
-
-      // Sort by newest created
-      filtered.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
-      setJobs(filtered);
+      console.error("Impossible de charger les missions:", err);
+      setJobs([]);
       setIsOffline(true);
     }
   };
 
   const handleDemoLogin = (role: UserRole) => {
+    if (!import.meta.env.DEV) { addToast("Le mode simulation n'est pas disponible en production.", 'error'); return; }
     const mockUid = 'demo-' + role + '-uid-' + Math.random().toString(36).substring(7);
     const mockUser = {
       uid: mockUid,
@@ -329,7 +250,7 @@ export default function App() {
     setProfile(mockProfile);
     setAuthError(null);
     setView('dashboard');
-    addToast(`🚀 Connexion de simulation réussie en tant que ${role === 'employer' ? 'Recruteur' : role === 'admin' ? 'Administrateur' : 'Candidat'} !`, 'success');
+    addToast(`🚀 Connexion de simulation réussie en tant que ${role === 'employer' ? 'Client' : role === 'admin' ? 'Administrateur' : 'Artisan'} !`, 'success');
   };
 
   const handleLogout = async () => {
@@ -354,6 +275,7 @@ export default function App() {
   };
 
   const handleLocalSimulationConnexion = (cleanedEmail: string, password?: string) => {
+    if (!import.meta.env.DEV) { addToast("Le mode simulation n'est pas disponible en production.", 'error'); return; }
     const localUsersStr = localStorage.getItem('offline_users') || '[]';
     const localUsers = JSON.parse(localUsersStr);
     
@@ -386,10 +308,7 @@ export default function App() {
       let userRole: UserRole = 'candidate';
       let name = "Marie Kouassi";
 
-      if (cleanedEmail === 'koffiw4@gmail.com') {
-        userRole = 'admin';
-        name = "Koffi Admin";
-      } else if (cleanedEmail.includes('employer') || cleanedEmail.includes('recruteur') || cleanedEmail.includes('resto') || cleanedEmail.includes('entreprise') || cleanedEmail.includes('societe')) {
+      if (cleanedEmail.includes('employer') || cleanedEmail.includes('recruteur') || cleanedEmail.includes('resto') || cleanedEmail.includes('entreprise') || cleanedEmail.includes('societe')) {
         userRole = 'employer';
         name = "Société Sourcing CI";
       }
@@ -435,6 +354,7 @@ export default function App() {
   };
 
   const handleLocalSimulationInscription = (name: string, cleanedEmail: string, assignedRole: UserRole, password?: string) => {
+    if (!import.meta.env.DEV) { addToast("Le mode simulation n'est pas disponible en production.", 'error'); return; }
     const localUsersStr = localStorage.getItem('offline_users') || '[]';
     const localUsers = JSON.parse(localUsersStr);
     
@@ -536,39 +456,9 @@ export default function App() {
       }
 
       // Sync user profile in Backend
-      const docSnap = { exists: () => false, data: () => null };
-      if (!docSnap.exists() || isNewUser) {
-        const defaultRole = u.email === 'koffiw4@gmail.com' ? 'admin' : 'candidate';
-        const newProfile: UserProfile = {
-          uid: u.$id,
-          role: defaultRole,
-          displayName: u.name || cleanedEmail.split('@')[0] || 'Utilisateur',
-          email: u.email || cleanedEmail || '',
-          photoURL: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=200&auto=format&fit=crop',
-          skills: [],
-          isVerified: false,
-          isPremium: false,
-          averageRating: 0,
-          reviewCount: 0,
-          createdAt: new Date().toISOString()
-        };
-        // await authService.updatePreferences(newProfile);
-        setProfile(newProfile);
-        addToast(`📝 Profil ${defaultRole === 'admin' ? 'Administrateur' : 'Candidat'} créé automatiquement !`, 'success');
-      } else {
-        const existingProfile = docSnap.data() as UserProfile;
-        if (u.email === 'koffiw4@gmail.com') {
-          if (existingProfile.role !== 'admin') {
-            const updated = { ...existingProfile, role: 'admin' as UserRole };
-            // await authService.updatePreferences(updated);
-            setProfile(updated);
-          } else {
-            setProfile(existingProfile);
-          }
-        } else {
-          setProfile(existingProfile);
-        }
-      }
+      const profileData = await profileService.ensure(u);
+      setProfile(profileData);
+      if (isNewUser) addToast('📝 Profil créé automatiquement !', 'success');
       
       setShowGeneralLoginModal(false);
       setView('dashboard');
@@ -592,39 +482,8 @@ export default function App() {
       await authService.loginWithGoogle();
       const u = await authService.getCurrentUser();
       
-      const docSnap = { exists: () => false, data: () => null };
-      if (!docSnap.exists()) {
-        const defaultRole = u.email === 'koffiw4@gmail.com' ? 'admin' : 'candidate';
-        const newProfile: UserProfile = {
-          uid: u.$id,
-          role: defaultRole,
-          displayName: u.name || 'Utilisateur Google',
-          email: u.email || '',
-          photoURL: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=200&auto=format&fit=crop',
-          skills: [],
-          isVerified: false,
-          isPremium: false,
-          averageRating: 0,
-          reviewCount: 0,
-          createdAt: new Date().toISOString()
-        };
-        // await authService.updatePreferences(newProfile);
-        setProfile(newProfile);
-        addToast(`📝 Profil ${defaultRole === 'admin' ? 'Administrateur' : 'Candidat'} créé automatiquement !`, 'success');
-      } else {
-        const existingProfile = docSnap.data() as UserProfile;
-        if (u.email === 'koffiw4@gmail.com') {
-          if (existingProfile.role !== 'admin') {
-            const updated = { ...existingProfile, role: 'admin' as UserRole };
-            // await authService.updatePreferences(updated);
-            setProfile(updated);
-          } else {
-            setProfile(existingProfile);
-          }
-        } else {
-          setProfile(existingProfile);
-        }
-      }
+      const profileData = await profileService.ensure(u);
+      setProfile(profileData);
       setShowGeneralLoginModal(false);
       setView('dashboard');
       addToast(`🚀 Connexion Google réussie !`, 'success');
@@ -654,7 +513,7 @@ export default function App() {
     }
 
     const cleanedEmail = email.trim().toLowerCase();
-    const assignedRole = (role === 'admin' && cleanedEmail !== 'koffiw4@gmail.com') ? 'candidate' : role;
+    const assignedRole: UserRole = role === 'employer' ? 'employer' : 'candidate'; // jamais admin à l'inscription
 
     
 
@@ -681,50 +540,13 @@ export default function App() {
         throw new Error("Authentification échouée.");
       }
 
-      const defaultRole = u.email === 'koffiw4@gmail.com' ? 'admin' : assignedRole;
-      if (shouldCreateProfile) {
-        const newProfile: UserProfile = {
-          uid: u.$id,
-          role: defaultRole,
-          displayName: name || u.name || 'Utilisateur',
-          email: u.email || cleanedEmail || '',
-          photoURL: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=200&auto=format&fit=crop',
-          skills: [],
-          isVerified: false,
-          isPremium: false,
-          averageRating: 0,
-          reviewCount: 0,
-          createdAt: new Date().toISOString()
-        };
-
-        // await authService.updatePreferences(newProfile);
-        setProfile(newProfile);
-      } else {
-        const docSnap = { exists: () => false, data: () => null };
-        if (docSnap.exists()) {
-          setProfile(docSnap.data() as UserProfile);
-        } else {
-          const newProfile: UserProfile = {
-            uid: u.$id,
-            role: defaultRole,
-            displayName: name || 'Utilisateur',
-            email: u.email || cleanedEmail || '',
-            photoURL: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=200&auto=format&fit=crop',
-            skills: [],
-            isVerified: false,
-            isPremium: false,
-            averageRating: 0,
-            reviewCount: 0,
-            createdAt: new Date().toISOString()
-          };
-          // await authService.updatePreferences(newProfile);
-          setProfile(newProfile);
-        }
-      }
+      const profileData = await profileService.ensure(u, assignedRole, name);
+      setProfile(profileData);
+      const defaultRole = profileData.role;
 
       setShowGeneralLoginModal(false);
       setView('dashboard');
-      addToast(shouldCreateProfile ? `🎉 Compte créé en tant que ${defaultRole === 'employer' ? 'Recruteur' : 'Candidat'} !` : `🚀 Connexion réussie !`, 'success');
+      addToast(shouldCreateProfile ? `🎉 Compte créé en tant que ${defaultRole === 'employer' ? 'Client' : 'Artisan'} !` : `🚀 Connexion réussie !`, 'success');
     } catch (err: any) {
       console.error("Backend Inscription Error:", err);
       if (err.message && err.message.includes('api-key-not-valid')) {
@@ -743,56 +565,13 @@ export default function App() {
     setShowGeneralLoginModal(true);
   };
 
-  const seedData = async () => {
-    if (jobs.length > 0) return;
-    const demoJobs: Omit<JobPost, 'id'>[] = [
-      {
-        employerId: 'system',
-        title: 'Nounou Plein Temps (Cocody)',
-        description: 'Recherche nounou expérimentée pour garde de deux jumeaux de 2 ans. Logée ou non-logée. Références exigées.',
-        category: 'nounou',
-        location: 'Abidjan',
-        salaryRange: '120 000',
-        status: 'approved',
-        isPremium: true,
-        createdAt: new Date().toISOString()
-      },
-      {
-         employerId: 'system',
-         title: 'Chauffeur Professionnel VTC',
-         description: 'Besoin d un chauffeur maitrisant la zone de Marcory et Plateau. Conduite défensive exigée.',
-         category: 'chauffeur',
-         location: 'Abidjan',
-         salaryRange: '150 000',
-         status: 'approved',
-         isPremium: false,
-         createdAt: new Date().toISOString()
-      }
-    ];
-    
-    if (!user) {
-      setJobs(demoJobs.map((j, i) => ({ id: `demo-${i}`, ...j } as JobPost)));
-      return;
-    }
-
-    try {
-      for (const job of demoJobs) {
-        // seed job
-      }
-      await fetchJobs();
-    } catch (err) {
-      console.error("Seeding failed (permissions?), showing local data:", err);
-      setJobs(demoJobs.map((j, i) => ({ id: `demo-${i}`, ...j } as JobPost)));
-    }
-  };
-
   const handleApply = async (jobId: string, employerId: string) => {
     if (!user) {
       handleLogin('candidate');
       return;
     }
     if (profile?.role !== 'candidate') {
-      alert("Seuls les candidats peuvent postuler aux offres.");
+      alert("Seuls les artisans peuvent proposer une offre sur une mission.");
       return;
     }
     const targetJob = jobs.find(j => j.id === jobId) || selectedJob;
@@ -802,39 +581,29 @@ export default function App() {
   };
 
   const submitApplication = async (data: {
-    candidateName: string;
-    photoURL: string;
-    experienceYears: number;
+    artisanName: string;
     phone: string;
-    cvName?: string;
-    cvUrl?: string;
-    cvFile?: File;
+    experienceYears: number;
+    proposedPrice: number;
+    delay: string;
     message: string;
   }) => {
     if (!user || !applyingJob) return;
     try {
-      if (!data.cvFile) {
-        throw new Error('Veuillez joindre un CV avant de postuler.');
-      }
-      await sourcingService.submitApplication(applyingJob.id, user.$id, data.cvFile, {
-        employerId: applyingJob.employerId,
-        message: data.message,
-        candidateName: data.candidateName,
-        photoURL: data.photoURL,
+      await missionService.submitOffer({
+        mission: applyingJob,
+        artisanId: user.$id,
+        artisanName: data.artisanName,
+        photoURL: profile?.photoURL,
         experienceYears: data.experienceYears,
-        cvName: data.cvName
+        proposedPrice: data.proposedPrice,
+        delay: data.delay,
+        message: data.message,
       });
 
-      // Sync user profile in real-time
       if (profile) {
-        const updatedProfile = {
-          ...profile,
-          displayName: data.candidateName,
-          photoURL: data.photoURL,
-          phone: data.phone,
-          ...(data.cvName ? { cvName: data.cvName, cvUrl: data.cvUrl } : {})
-        };
-        // update user
+        const updatedProfile = { ...profile, displayName: data.artisanName, phone: data.phone };
+        try { await databases.updateDocument(APPWRITE_CONFIG.DATABASE_ID, 'users', user.$id, { displayName: data.artisanName, phone: data.phone }); } catch (e) { console.warn('Profil non mis à jour:', e); }
         setProfile(updatedProfile);
       }
 
@@ -842,7 +611,8 @@ export default function App() {
       setApplyingJob(null);
       setShowApplySuccess(true);
     } catch (err) {
-      console.error("Submitting application failed:", err);
+      console.error("Envoi de l'offre impossible:", err);
+      addToast("⚠️ Votre offre n'a pas pu être envoyée. Réessayez.", 'error');
     }
   };
 
@@ -882,12 +652,12 @@ export default function App() {
           </div>
 
           <div className="hidden md:flex items-center gap-6">
-            <button onClick={() => setView('jobs')} className="text-slate-600 text-sm font-medium hover:text-emerald-600 transition-colors">Offres</button>
+            <button onClick={() => setView('jobs')} className="text-slate-600 text-sm font-medium hover:text-emerald-600 transition-colors">Missions</button>
             {user && (
               <button onClick={() => setView('dashboard')} className="text-slate-600 text-sm font-medium hover:text-emerald-600 transition-colors">Tableau de bord</button>
             )}
             {profile?.role === 'employer' && (
-              <button onClick={() => setView('post-job')} className="text-slate-900 bg-emerald-50 text-emerald-700 px-4 py-2 rounded-lg text-xs font-bold hover:bg-emerald-100 transition-all">Publier une offre</button>
+              <button onClick={() => setView('post-job')} className="text-slate-900 bg-emerald-50 text-emerald-700 px-4 py-2 rounded-lg text-xs font-bold hover:bg-emerald-100 transition-all">Publier une mission</button>
             )}
             
             {user ? (
@@ -930,9 +700,9 @@ export default function App() {
             exit={{ opacity: 0, y: -10 }}
             className="fixed inset-0 top-16 z-40 bg-white md:hidden p-6 flex flex-col gap-6"
           >
-            <button onClick={() => { setView('jobs'); setIsMenuOpen(false); }} className="text-left text-lg font-bold text-slate-800 border-b border-slate-50 pb-4">Trouver des offres</button>
+            <button onClick={() => { setView('jobs'); setIsMenuOpen(false); }} className="text-left text-lg font-bold text-slate-800 border-b border-slate-50 pb-4">Trouver des missions</button>
             {profile?.role === 'employer' && (
-               <button onClick={() => { setView('post-job'); setIsMenuOpen(false); }} className="text-left text-lg font-bold text-slate-800 border-b border-slate-50 pb-4">Publier une annonce</button>
+               <button onClick={() => { setView('post-job'); setIsMenuOpen(false); }} className="text-left text-lg font-bold text-slate-800 border-b border-slate-50 pb-4">Publier une mission</button>
             )}
             {profile?.role === 'admin' && (
                <button onClick={() => { setView('dashboard'); setDashboardTab('admin'); setIsMenuOpen(false); }} className="text-left text-lg font-bold text-emerald-600 border-b border-slate-50 pb-4">Panel Admin</button>
@@ -996,7 +766,6 @@ export default function App() {
                 canApply={profile?.role === 'candidate'}
                 onPostJob={() => setView('post-job')}
                 isEmployer={profile?.role === 'employer' || profile?.role === 'admin'}
-                onSeed={seedData}
                 onSelectJob={setSelectedJob}
               />
               
@@ -1063,7 +832,7 @@ export default function App() {
                 IvoireSource
               </h3>
               <p className="text-slate-400 text-[11px] text-center mb-6 leading-relaxed">
-                Trouvez du travail ou recrutez des professionnels de confiance en Côte d'Ivoire.
+                Trouvez des missions ou un artisan de confiance en Côte d'Ivoire. Paiement en fin de mission.
               </p>
 
               {/* Tabs */}
@@ -1205,12 +974,12 @@ export default function App() {
                             : 'border-slate-200 bg-white hover:border-slate-300'
                         }`}
                       >
-                        <span className="text-xl block mb-1">👶</span>
+                        <span className="text-xl block mb-1">🛠️</span>
                         <span className="font-extrabold text-[10px] uppercase tracking-wider block text-slate-800">
-                          Candidat
+                          Artisan
                         </span>
                         <span className="text-[8px] text-slate-400 leading-normal block mt-0.5">
-                          Cherche un emploi
+                          Propose ses services
                         </span>
                       </button>
 
@@ -1225,10 +994,10 @@ export default function App() {
                       >
                         <span className="text-xl block mb-1">💼</span>
                         <span className="font-extrabold text-[10px] uppercase tracking-wider block text-slate-800">
-                          Employeur
+                          Client
                         </span>
                         <span className="text-[8px] text-slate-400 leading-normal block mt-0.5">
-                          Veut recruter
+                          Cherche un artisan
                         </span>
                       </button>
                     </div>
@@ -1293,7 +1062,7 @@ export default function App() {
         )}
 
         {applyingJob && (
-          <ApplicationFormModal 
+          <OfferFormModal 
             job={applyingJob}
             profile={profile}
             onClose={() => setApplyingJob(null)}

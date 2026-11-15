@@ -3,7 +3,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { z } from 'zod';
 
 const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
+  apiKey: process.env.GEMINI_API_KEY || 'missing',
   httpOptions: {
     headers: {
       'User-Agent': 'aistudio-build',
@@ -40,11 +40,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
-      contents: `Moderation d'annonce d'emploi pour la Côte d'Ivoire. 
+      contents: `Moderation d'une annonce de mission (artisan / service à domicile) pour la Côte d'Ivoire. 
       Titre: ${title.replace(/[\n\r]/g, ' ')}
       Description: ${description}
       
-      Vérifie si l'annonce est explicite, frauduleuse ou inappropriée (ex: traite humaine, arnaque, contenu sexuel). 
+      Vérifie si l'annonce est explicite, frauduleuse ou inappropriée (ex: traite humaine, arnaque, demande de paiement hors plateforme, contenu sexuel). 
       Retourne un JSON avec:
       - approved: boolean
       - reason: string (explication courte si refusé)`,
@@ -69,6 +69,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       message: errorMessage,
       timestamp: new Date().toISOString()
     });
-    res.status(200).json({ approved: true, reason: 'Moderation skip due to error' });
+    // Échec fermé : en cas de panne de l'IA, l'annonce n'est PAS validée automatiquement,
+    // elle part en revue manuelle (statut « pending »).
+    res.status(200).json({ approved: false, review: true, reason: 'Vérification automatique indisponible : annonce envoyée en revue manuelle.' });
   }
 }

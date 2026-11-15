@@ -67,7 +67,7 @@ export function ApplicationSuccessView({ job, onClose, onGoToDashboard }: Applic
           
           <span className="text-[10px] font-black tracking-[0.2em] text-emerald-600 uppercase mb-2">FÉLICITATIONS</span>
           <h2 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight leading-tight">
-            Candidature Envoyée !
+            Offre envoyée !
           </h2>
           <p className="text-xs text-slate-400 mt-2 max-w-xs font-medium">
             Votre profil a été transmis avec succès à l'employeur.
@@ -96,7 +96,7 @@ export function ApplicationSuccessView({ job, onClose, onGoToDashboard }: Applic
           <div className="grid grid-cols-2 gap-4 border-t border-slate-100 pt-3 text-xs">
             <div className="flex items-center gap-2 text-slate-500 font-medium">
               <CreditCard className="h-3.5 w-3.5 text-slate-400" />
-              <span>{job.salaryRange} FCFA / mois</span>
+              <span>Budget : {job.budget ? Math.round(job.budget).toLocaleString('fr-FR') : job.salaryRange} FCFA</span>
             </div>
             <div className="flex items-center gap-2 text-slate-500 font-medium justify-end">
               <Calendar className="h-3.5 w-3.5 text-slate-400" />
@@ -136,9 +136,9 @@ export function ApplicationSuccessView({ job, onClose, onGoToDashboard }: Applic
               <div className="w-0.5 h-10 bg-slate-100 mt-1"></div>
             </div>
             <div>
-              <h5 className="font-bold text-slate-800 text-xs leading-none">Examen par le recruteur</h5>
+              <h5 className="font-bold text-slate-800 text-xs leading-none">Réponse du client</h5>
               <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
-                Le recruteur étudie votre candidature. S'il est intéressé, il vous contactera par email ou téléphone.
+                Le client compare les offres reçues. Si la vôtre est retenue, la mission passe en cours dans votre tableau de bord.
               </p>
             </div>
           </div>
@@ -165,7 +165,7 @@ export function ApplicationSuccessView({ job, onClose, onGoToDashboard }: Applic
           <div className="text-[11px] text-emerald-800 leading-relaxed font-medium">
             <p className="font-bold">Conseil de sécurité</p>
             <p className="mt-0.5 text-emerald-700/85">
-              Ne versez jamais d'argent pour un entretien d'embauche ou des frais de dossier. Signalez tout recruteur suspect à notre équipe administrative.
+              Ne demandez ni n'acceptez jamais de paiement en dehors de la plateforme : seul le paiement de fin de mission vous protège et garantit votre reversement.
             </p>
           </div>
         </div>
@@ -184,7 +184,7 @@ export function ApplicationSuccessView({ job, onClose, onGoToDashboard }: Applic
             onClick={onGoToDashboard}
             className="flex-1 py-3.5 px-4 rounded-xl text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition-all font-sans flex items-center justify-center gap-2 shadow-lg shadow-emerald-100"
           >
-            Suivre ma candidature
+            Suivre mes offres
             <ArrowRight className="h-3.5 w-3.5" />
           </button>
         </div>

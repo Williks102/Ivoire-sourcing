@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Filter, Search as SearchIcon, X, PlusCircle, MapPin, CreditCard, ShieldCheck, ArrowUpDown } from 'lucide-react';
 import { JobPost } from '../types';
-import { CATEGORIES, CITIES } from '../constants';
+import { CATEGORIES, CITIES, COMMISSION_RATE, formatFcfa } from '../constants';
 
 interface JobListViewProps {
   jobs: JobPost[];
@@ -14,7 +14,7 @@ interface JobListViewProps {
   canApply: boolean;
   onPostJob: () => void;
   isEmployer?: boolean;
-  onSeed: () => void;
+  onSeed?: () => void;
   onSelectJob: (job: JobPost) => void;
 }
 
@@ -50,22 +50,17 @@ export function JobListView({
           selectedCity={selectedCity} 
           setSelectedCity={setSelectedCity} 
         />
-        <aside className="mt-auto">
-          <div className="bg-slate-900 rounded-2xl p-5 text-white shadow-lg">
-            <p className="text-[10px] text-slate-400 font-bold uppercase mb-2">Offres Premium</p>
-            <p className="text-sm font-bold mb-4 leading-tight">Mettez en avant vos annonces</p>
-            <button className="w-full py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-bold text-xs rounded-lg transition-colors">
-              DEVENEZ PREMIUM
-            </button>
-          </div>
-        </aside>
+        <div className="mt-auto bg-slate-900 rounded-2xl p-5 text-white shadow-lg">
+          <p className="text-[10px] text-slate-400 font-bold uppercase mb-2">Paiement sécurisé</p>
+          <p className="text-sm font-bold leading-tight">Le client paie uniquement une fois la mission terminée.</p>
+        </div>
       </aside>
 
       {/* List Area */}
       <section className="flex-1 flex flex-col overflow-hidden">
         <div className="px-4 md:px-8 py-6 flex-1 overflow-y-auto">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 gap-4">
-            <h2 className="text-2xl font-bold text-slate-800">Candidats & Offres</h2>
+            <h2 className="text-2xl font-bold text-slate-800">Missions disponibles</h2>
             <div className="flex flex-wrap items-center gap-3 sm:justify-end">
               {/* Sort Dropdown */}
               <div className="relative flex items-center bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 shadow-xxs">
@@ -89,14 +84,6 @@ export function JobListView({
               </button>
               
               <div className="flex gap-2">
-                {jobs.length === 0 && (
-                  <button 
-                    onClick={onSeed} 
-                    className="bg-emerald-50 text-emerald-700 px-4 py-2.5 rounded-xl text-xs font-bold hover:bg-emerald-100 transition-all border border-emerald-100 whitespace-nowrap"
-                  >
-                    Exemples
-                  </button>
-                )}
                 {isEmployer && (
                   <button onClick={onPostJob} className="bg-slate-900 text-white px-5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 hover:scale-105 transition-all whitespace-nowrap">
                     <PlusCircle className="h-4 w-4" /> Publier
@@ -128,15 +115,14 @@ export function JobListView({
             {sortedJobs.length === 0 ? (
               <div className="col-span-full py-20 text-center border-2 border-dashed border-slate-200 rounded-3xl">
                 <SearchIcon className="h-10 w-10 text-slate-300 mx-auto mb-4" />
-                <p className="text-slate-400 font-medium">Aucune offre disponible pour le moment.</p>
+                <p className="text-slate-400 font-medium">Aucune mission disponible pour le moment.</p>
               </div>
             ) : (
               sortedJobs.map(job => (
-                <div key={job.id} onClick={() => onSelectJob(job)} className={`bg-white border p-6 rounded-2xl transition-all hover:border-emerald-500/30 job-card-shadow relative cursor-pointer group ${job.isPremium ? 'border-emerald-500/20' : 'border-slate-100'}`}>
-                   {job.isPremium && <div className="absolute top-4 right-4 bg-emerald-100 text-emerald-700 text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-widest">Premium</div>}
+                <div key={job.id} onClick={() => onSelectJob(job)} className="bg-white border border-slate-100 p-6 rounded-2xl transition-all hover:border-emerald-500/30 job-card-shadow relative cursor-pointer group">
                    <div className="flex gap-4 mb-4">
                      <div className="w-12 h-12 bg-slate-50 flex items-center justify-center rounded-xl text-emerald-600 font-black text-xl border border-slate-100 shrink-0">
-                        {job.category[0].toUpperCase()}
+                        {CATEGORIES.find(c => c.id === job.category)?.icon || (job.category || '?')[0].toUpperCase()}
                      </div>
                      <div className="min-w-0">
                        <h4 className="font-bold text-slate-800 text-lg leading-tight mb-0.5 truncate">{job.title}</h4>
@@ -147,7 +133,7 @@ export function JobListView({
                      {job.description}
                    </p>
                    <div className="flex flex-col sm:flex-row sm:items-center justify-between pt-4 border-t border-slate-50 gap-4">
-                     <span className="text-xl font-black text-emerald-600 whitespace-nowrap">{job.salaryRange} <span className="text-[10px] font-bold text-slate-300 uppercase tracking-tighter">FCFA / Mois</span></span>
+                     <span className="text-xl font-black text-emerald-600 whitespace-nowrap">{job.budget ? formatFcfa(job.budget) : `${job.salaryRange || '—'} FCFA`} <span className="text-[10px] font-bold text-slate-300 uppercase tracking-tighter">budget</span></span>
                      <button 
                       onClick={(e) => {
                         e.stopPropagation();
@@ -155,7 +141,7 @@ export function JobListView({
                       }}
                       className="w-full sm:w-auto px-5 py-2.5 rounded-lg text-xs font-bold transition-all bg-slate-900 text-white hover:bg-emerald-600"
                     >
-                      Détails
+                      Voir la mission
                     </button>
                    </div>
                 </div>
@@ -220,7 +206,7 @@ export function FilterContent({
             onClick={() => setSelectedCategory('')}
             className={`w-full flex items-center justify-between p-2.5 rounded-xl text-sm transition-all focus:outline-none ${!selectedCategory ? 'bg-emerald-50 text-emerald-700 font-bold' : 'text-slate-600 hover:bg-slate-50'}`}
           >
-            <span>Toutes les offres</span>
+            <span>Tous les métiers</span>
           </button>
           {CATEGORIES.map(cat => (
             <button 
@@ -268,12 +254,12 @@ export function JobDetailView({ job, onClose, onApply, canApply }: JobDetailView
         <button onClick={onClose} className="p-2 -ml-2 bg-slate-100 hover:bg-slate-200 rounded-full transition-colors">
           <X className="h-5 w-5 text-slate-600" />
         </button>
-        <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">{job.category}</span>
+        <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">{CATEGORIES.find(c => c.id === job.category)?.label || job.category}</span>
       </header>
 
       <div className="flex-1 overflow-y-auto px-6 md:px-8 py-8 md:py-10">
         <div className="inline-flex items-center gap-2 bg-emerald-50 text-emerald-700 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest mb-6">
-          {job.isPremium ? 'Offre Premium' : 'Annonce Vérifiée'}
+          Mission vérifiée
         </div>
         
         <h2 className="text-3xl font-black text-slate-900 tracking-tight leading-tight mb-4">{job.title}</h2>
@@ -285,13 +271,13 @@ export function JobDetailView({ job, onClose, onApply, canApply }: JobDetailView
           </div>
           <div className="flex items-center gap-2 text-slate-500">
             <CreditCard className="h-4 w-4" />
-            <span className="text-sm font-bold text-emerald-600">{job.salaryRange} FCFA</span>
+            <span className="text-sm font-bold text-emerald-600">Budget : {job.budget ? formatFcfa(job.budget) : `${job.salaryRange || '—'} FCFA`}</span>
           </div>
         </div>
 
         <div className="space-y-6">
           <div>
-            <h4 className="text-[10px] uppercase font-black text-slate-300 tracking-widest mb-4">Description du poste</h4>
+            <h4 className="text-[10px] uppercase font-black text-slate-300 tracking-widest mb-4">Détails de la mission</h4>
             <div className="text-slate-600 leading-relaxed space-y-4 whitespace-pre-wrap">
               {job.description}
             </div>
@@ -303,8 +289,8 @@ export function JobDetailView({ job, onClose, onApply, canApply }: JobDetailView
                   <ShieldCheck className="h-6 w-6 text-emerald-500" />
                </div>
                <div>
-                  <p className="text-xs font-bold text-slate-800">Recrutement Sûr</p>
-                  <p className="text-[10px] text-slate-400">Identité du recruteur validée.</p>
+                  <p className="text-xs font-bold text-slate-800">Paiement sécurisé en fin de mission</p>
+                  <p className="text-[10px] text-slate-400">Commission de {Math.round(COMMISSION_RATE * 100)} % prélevée sur le prix convenu, une fois le travail terminé.</p>
                </div>
             </div>
           </div>
@@ -316,10 +302,10 @@ export function JobDetailView({ job, onClose, onApply, canApply }: JobDetailView
           onClick={onApply}
           className={`w-full py-4 rounded-xl font-bold transition-all shadow-lg text-sm ${canApply ? 'bg-emerald-600 text-white hover:scale-[1.02] active:scale-95 shadow-emerald-100' : 'bg-slate-900 text-white hover:bg-emerald-600'}`}
         >
-          {canApply ? 'POSTULER MAINTENANT' : 'CONNECTEZ-VOUS COMME CANDIDAT'}
+          {canApply ? 'PROPOSER MON OFFRE' : 'CONNECTEZ-VOUS COMME ARTISAN'}
         </button>
         {!canApply && (
-           <p className="text-center text-[10px] text-slate-400 mt-4 uppercase font-bold tracking-tight">Postulation réservée aux candidats vérifiés</p>
+           <p className="text-center text-[10px] text-slate-400 mt-4 uppercase font-bold tracking-tight">Offres réservées aux artisans inscrits</p>
         )}
       </footer>
     </motion.div>
