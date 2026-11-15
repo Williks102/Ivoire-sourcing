@@ -30,6 +30,7 @@ import { db, auth, doc, setDoc, getDoc, deleteDoc, collection, query, where, lim
 import { UserProfile, JobPost, Application, UserRole } from '../types';
 import { CITIES, CATEGORIES, MISSION_STATUS_LABELS } from '../constants';
 import { ClientMissionsPanel, ArtisanMissionsPanel } from './MissionsPanel';
+import { ArtisanProfileFields } from './ArtisanProfileFields';
 
 enum OperationType {
   CREATE = 'create',
@@ -101,7 +102,6 @@ export function DashboardView({
   const [loadingData, setLoadingData] = useState(false);
   const [selectedCandidate, setSelectedCandidate] = useState<UserProfile | null>(null);
   const [selectedApplication, setSelectedApplication] = useState<Application | null>(null);
-  const [unlockedCandidateIds, setUnlockedCandidateIds] = useState<string[]>([]);
 
   // Job Management States
   const [selectedManageJob, setSelectedManageJob] = useState<JobPost | null>(null);
@@ -113,12 +113,6 @@ export function DashboardView({
     salaryRange: '',
     description: '',
   });
-  const [checkoutStep, setCheckoutStep] = useState<'details' | 'plans' | 'payment-method' | 'processing' | 'success'>('details');
-  const [chosenPlan, setChosenPlan] = useState<'one-time' | 'monthly'>('one-time');
-  const [paymentOperator, setPaymentOperator] = useState<'wave' | 'orange' | 'mtn' | 'moov' | 'card'>('wave');
-  const [phoneNumber, setPhoneNumber] = useState<string>('');
-  const [paymentError, setPaymentError] = useState<string>('');
-  const [paymentStatusMessage, setPaymentStatusMessage] = useState<string>('');
   const [previewCv, setPreviewCv] = useState<{ name: string; url: string } | null>(null);
   const [confirmation, setConfirmation] = useState<{
     title: string;
@@ -132,6 +126,9 @@ export function DashboardView({
   const [editBio, setEditBio] = useState(profile?.bio || '');
   const [editLocation, setEditLocation] = useState(profile?.location || '');
   const [editSkills, setEditSkills] = useState<string[]>(profile?.skills || []);
+  const [editTrades, setEditTrades] = useState<string[]>(profile?.trades || []);
+  const [editExperience, setEditExperience] = useState<number>(profile?.experienceYears || 0);
+  const [editServiceCities, setEditServiceCities] = useState<string[]>(profile?.serviceCities || []);
   const [editPhone, setEditPhone] = useState(profile?.phone || '');
   const [profileCvFile, setProfileCvFile] = useState<{ name: string; content?: string } | null>(
     profile?.cvName ? { name: profile.cvName, content: profile.cvUrl } : null
@@ -192,8 +189,8 @@ export function DashboardView({
 
   // Dynamic relational cache for display names and job titles
   const [resolvedJobs, setResolvedJobs] = useState<Record<string, string>>({
-    'system-0': 'Nounou Plein Temps (Cocody)',
-    'system-1': 'Chauffeur Professionnel VTC',
+    'system-0': 'Réparation d’une fuite (Cocody)',
+    'system-1': 'Installation de climatisation',
   });
   const [resolvedNames, setResolvedNames] = useState<Record<string, string>>({});
 
@@ -231,9 +228,9 @@ export function DashboardView({
           if (found) {
             newJobs[jId] = found.title;
           } else if (jId === 'demo-0') {
-            newJobs[jId] = "Nounou Plein Temps (Cocody)";
+            newJobs[jId] = "Réparation d’une fuite (Cocody)";
           } else {
-            newJobs[jId] = "Emploi de Maison Sourcing";
+            newJobs[jId] = "Mission IvoireSource";
           }
           updated = true;
         }
@@ -264,7 +261,7 @@ export function DashboardView({
           } else if (cId === 'demo-candidate-uid-123') {
             newNames[cId] = "Marie Kouassi";
           } else {
-            newNames[cId] = "Candidat de Confiance";
+            newNames[cId] = "Artisan de confiance";
           }
           updated = true;
         }
@@ -302,7 +299,7 @@ export function DashboardView({
         }
         setApps(prev => prev.map(a => a.id === appId ? { ...a, status: newStatus as any } : a));
         if (typeof (window as any).triggerSocketAction === 'function') {
-          (window as any).triggerSocketAction('dashboard_action', { name: `Candidature (Démo) mise à jour vers : ${newStatus}` });
+          (window as any).triggerSocketAction('dashboard_action', { name: `Offre (Démo) mise à jour vers : ${newStatus}` });
         }
         return;
       }
@@ -311,7 +308,7 @@ export function DashboardView({
       await setDoc(doc(db, 'applications', appId), { status: newStatus }, { merge: true });
       setApps(prev => prev.map(a => a.id === appId ? { ...a, status: newStatus as any } : a));
       if (typeof (window as any).triggerSocketAction === 'function') {
-        (window as any).triggerSocketAction('dashboard_action', { name: `Candidature mise à jour vers : ${newStatus}` });
+        (window as any).triggerSocketAction('dashboard_action', { name: `Offre mise à jour vers : ${newStatus}` });
       }
     } catch (err) {
       handleAppwriteError(err, OperationType.UPDATE, `applications/${appId}`);
@@ -358,15 +355,20 @@ export function DashboardView({
     setUpdatingProfile(true);
     setSuccessMsg('');
     try {
+      if (profile.role === 'candidate' && editTrades.length === 0) {
+        setUpdatingProfile(false);
+        showNotification('Choisissez au moins un métier pour compléter votre profil artisan.', 'error');
+        return;
+      }
       const updated: UserProfile = {
         ...profile,
         displayName: editName,
         bio: editBio,
         location: editLocation,
-        skills: editSkills,
         phone: editPhone,
-        cvName: profileCvFile ? profileCvFile.name : '',
-        cvUrl: profileCvFile ? profileCvFile.content : '',
+        ...(profile.role === 'candidate'
+          ? { skills: editSkills, trades: editTrades, experienceYears: editExperience, serviceCities: editServiceCities }
+          : {}),
       };
       const isDemoMode = import.meta.env.DEV && (profile.uid?.startsWith('demo-') ?? false);
       if (isDemoMode) {
@@ -376,9 +378,9 @@ export function DashboardView({
         setTimeout(() => setSuccessMsg(''), 4000);
         return;
       }
-      await setDoc(doc(db, 'users', profile.uid), updated);
+      await setDoc(doc(db, 'users', profile.uid), updated, { merge: true });
       onProfileUpdate(updated);
-      setSuccessMsg('Votre profil a été mis à jour de manière sécurisée !');
+      setSuccessMsg('Votre profil a été mis à jour !');
       setTimeout(() => setSuccessMsg(''), 4000);
     } catch (err) {
       handleAppwriteError(err, OperationType.UPDATE, `users/${profile.uid}`);
@@ -624,7 +626,7 @@ export function DashboardView({
 
       await setDoc(doc(db, 'jobs', jobId), { status: newStatus }, { merge: true });
       setMyJobs(prev => prev.map(j => j.id === jobId ? { ...j, status: newStatus } : j));
-      showNotification(`Le statut de l'offre d'emploi a été mis à jour avec succès !`, "success");
+      showNotification(`Le statut de la mission a été mis à jour avec succès !`, "success");
       if (newStatus === 'approved' && typeof (window as any).triggerSocketAction === 'function') {
         (window as any).triggerSocketAction('job_moderation_approved', { title: 'Annonce Modérée' });
       } else if (newStatus === 'rejected' && typeof (window as any).triggerSocketAction === 'function') {
@@ -657,14 +659,14 @@ export function DashboardView({
             const updatedJobs = localJobs.filter((j: any) => j.id !== jobId);
             localStorage.setItem('offline_jobs', JSON.stringify(updatedJobs));
             setMyJobs(prev => prev.filter(j => j.id !== jobId));
-            showNotification("L'annonce d'emploi a été supprimée avec succès (Démo) !", "success");
+            showNotification("La mission a été supprimée avec succès (Démo) !", "success");
             setConfirmation(null);
             return;
           }
 
           await deleteDoc(doc(db, 'jobs', jobId));
           setMyJobs(prev => prev.filter(j => j.id !== jobId));
-          showNotification("L'offre d'emploi a été supprimée avec succès.", "success");
+          showNotification("La mission a été supprimée avec succès.", "success");
           setConfirmation(null);
         } catch (err) {
           showNotification("Attribution insuffisante ou erreur lors de la suppression de l'offre.", "error");
@@ -677,15 +679,15 @@ export function DashboardView({
   // ADMIN CONTROLS: Delete application record
   const deleteApplicationAction = async (appId: string) => {
     setConfirmation({
-      title: "Supprimer la candidature",
-      message: "Êtes-vous sûr de vouloir supprimer cette candidature de la plateforme ?",
+      title: "Supprimer l'offre",
+      message: "Êtes-vous sûr de vouloir supprimer cette offre de la plateforme ?",
       onConfirm: async () => {
         try {
           await deleteDoc(doc(db, 'applications', appId));
           setApps(prev => prev.filter(a => a.id !== appId));
-          showNotification("La candidature a été supprimée avec succès.", "success");
+          showNotification("L'offre a été supprimée avec succès.", "success");
         } catch (err) {
-          showNotification("Attribution insuffisante ou erreur lors de la suppression de la candidature.", "error");
+          showNotification("Attribution insuffisante ou erreur lors de la suppression de l'offre.", "error");
           handleAppwriteError(err, OperationType.DELETE, `applications/${appId}`);
         }
       }
@@ -769,7 +771,7 @@ export function DashboardView({
       setMyJobs(prev => [newJobDoc, ...prev]);
       setAdminJobForm({ title: '', category: 'plomberie', location: 'Abidjan', salaryRange: '', description: '', isPremium: false, employerId: 'system' });
       setIsAdminCreatingJob(false);
-      alert("Offre d'emploi créée avec succès !");
+      alert("Mission créée avec succès !");
     } catch (err) {
       handleAppwriteError(err, OperationType.CREATE, 'jobs');
     }
@@ -811,7 +813,7 @@ export function DashboardView({
         setMyJobs(prev => prev.map(j => j.id === selectedManageJob.id ? updatedJob : j));
         setSelectedManageJob(null);
         setIsEditingJob(false);
-        showNotification("L'annonce d'emploi (Démo) a été modifiée avec succès !", "success");
+        showNotification("La mission (Démo) a été modifiée avec succès !", "success");
         return;
       }
 
@@ -819,9 +821,9 @@ export function DashboardView({
       setMyJobs(prev => prev.map(j => j.id === selectedManageJob.id ? updatedJob : j));
       setSelectedManageJob(null);
       setIsEditingJob(false);
-      showNotification("L'annonce d'emploi a été modifiée avec succès !", "success");
+      showNotification("La mission a été modifiée avec succès !", "success");
     } catch (err) {
-      showNotification("Erreur lors de la modification de l'annonce d'emploi.", "error");
+      showNotification("Erreur lors de la modification de la mission.", "error");
       handleAppwriteError(err, OperationType.UPDATE, `jobs/${selectedManageJob.id}`);
     }
   };
@@ -907,7 +909,7 @@ export function DashboardView({
               displayName: 'Marie Kouassi',
               email: 'marie.k@gmail.com',
               photoURL: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=200&auto=format&fit=crop',
-              skills: ["Garde d'enfants", "Cuisine africaine", "Ménage"],
+              skills: ["Plomberie", "Dépannage"],
               isVerified: true,
               isPremium: false,
               averageRating: 4.8,
@@ -934,11 +936,11 @@ export function DashboardView({
             {
               id: 'demo-0',
               employerId: 'system',
-              title: 'Nounou Plein Temps (Cocody)',
-              description: 'Recherche nounou expérimentée pour garde de deux jumeaux de 2 ans. Références exigées.',
+              title: 'Réparation d’une fuite (Cocody)',
+              description: 'Fuite d’eau sous un évier de cuisine, intervention rapide souhaitée.',
               category: 'plomberie',
               location: 'Abidjan',
-              salaryRange: '120 000 FCFA',
+              budget: 25000,
               status: 'approved',
               isPremium: true,
               createdAt: new Date().toISOString()
@@ -974,7 +976,7 @@ export function DashboardView({
               displayName: 'Marie Kouassi',
               email: 'marie.k@gmail.com',
               photoURL: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=200&auto=format&fit=crop',
-              skills: ["Garde d'enfants", "Cuisine africaine", "Ménage familial"],
+              skills: ["Plomberie", "Dépannage"],
               isVerified: true,
               isPremium: false,
               averageRating: 4.8,
@@ -991,7 +993,6 @@ export function DashboardView({
 
           const localApps = JSON.parse(localStorage.getItem('offline_applications') || '[]');
           setApps(localApps.filter((a: any) => a.employerId === profile.uid));
-          setUnlockedCandidateIds(['demo-candidate-uid-123']);
         }
 
         if (profile.role === 'candidate') {
@@ -1007,6 +1008,8 @@ export function DashboardView({
   }, [user, profile, activeTab]);
 
   const viewCandidate = async (candidateId: string, app?: Application) => {
+    // Les coordonnées d'un artisan ne sont visibles que de l'administration : les clients passent par la plateforme.
+    if (profile?.role !== 'admin') return;
     try {
       const isDemo = import.meta.env.DEV && (profile?.uid?.startsWith('demo-') ?? false);
       if (isDemo) {
@@ -1030,10 +1033,10 @@ export function DashboardView({
       const candidateData: UserProfile = {
         uid: candidateId,
         role: 'candidate',
-        displayName: foundUser?.displayName || app?.candidateName || `Candidat ${candidateId.substring(0, 6)}...`,
+        displayName: foundUser?.displayName || app?.candidateName || `Artisan ${candidateId.substring(0, 6)}...`,
         email: foundUser?.email || '',
         photoURL: foundUser?.photoURL || app?.photoURL || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=200&auto=format&fit=crop',
-        skills: foundUser?.skills || ["Garde d'enfants", "Ménage", "Cuisine"],
+        skills: foundUser?.skills || ["Plomberie", "Dépannage"],
         isVerified: foundUser?.isVerified ?? true,
         isPremium: foundUser?.isPremium ?? false,
         averageRating: foundUser?.averageRating || 4.8,
@@ -1043,15 +1046,6 @@ export function DashboardView({
       setSelectedCandidate(candidateData);
       setSelectedApplication(app || null);
     }
-    
-    // Clear checkout state
-    setPhoneNumber('');
-    setPaymentError('');
-    setPaymentStatusMessage('');
-    
-    // Direct candidates are free, and jobs applications which are already accepted/approved are also free to email
-    const isCandidateFree = profile?.role !== 'employer' || profile?.isPremium || unlockedCandidateIds.includes(candidateId) || (app && (app.status === 'accepted' || app.status === 'approved'));
-    setCheckoutStep('details');
   };
 
   if (!user) return null;
@@ -1262,16 +1256,16 @@ export function DashboardView({
                                 <div className="flex-1 min-w-0">
                                    <div className="flex justify-between items-start mb-1">
                                       <p 
-                                        className={`text-sm font-bold text-slate-800 truncate ${profile?.role === 'employer' ? 'cursor-pointer hover:text-emerald-600 hover:underline' : ''}`}
+                                        className={`text-sm font-bold text-slate-800 truncate ${profile?.role === 'admin' ? 'cursor-pointer hover:text-emerald-600 hover:underline' : ''}`}
                                         onClick={() => {
-                                          if (profile?.role === 'employer') {
+                                          if (profile?.role === 'admin') {
                                             viewCandidate(app.candidateId, app);
                                           }
                                         }}
                                       >
                                          {profile.role === 'candidate' 
                                            ? (resolvedJobs[app.jobId] || `Offre ${app.jobId.substring(0,8)}...`) 
-                                           : (resolvedNames[app.candidateId] || `Candidat ID: ${app.candidateId.substring(0,6)}`)}
+                                           : (resolvedNames[app.candidateId] || `Artisan ${app.candidateId.substring(0,6)}`)}
                                       </p>
                                       <span className="text-[9px] text-slate-300 font-bold uppercase">{new Date(app.createdAt).toLocaleDateString()}</span>
                                    </div>
@@ -1344,7 +1338,7 @@ export function DashboardView({
                  <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 border-b border-slate-50 pb-6">
                     <div>
                        <h2 className="text-2xl font-black text-slate-900 tracking-tight">Console d'Administration</h2>
-                       <p className="text-sm text-slate-400 font-medium">Contrôle de sécurité, modération des offres d'emploi et validation de CNI.</p>
+                       <p className="text-sm text-slate-400 font-medium">Contrôle de sécurité, modération des missions et validation de CNI.</p>
                     </div>
                     <div className="flex bg-slate-100 p-1 rounded-2xl shrink-0 self-start lg:self-center">
                        <button 
@@ -1363,7 +1357,7 @@ export function DashboardView({
                          onClick={() => setAdminTab('applications')}
                          className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all ${adminTab === 'applications' ? 'bg-white text-slate-800 shadow-md' : 'text-slate-500 hover:text-slate-800'}`}
                        >
-                          Candidatures ({apps.length})
+                          Offres ({apps.length})
                        </button>
                     </div>
                  </header>
@@ -1615,14 +1609,14 @@ export function DashboardView({
                              animate={{ opacity: 1, y: 0 }}
                              className="bg-white border border-slate-100 p-6 rounded-3xl shadow-md space-y-4 font-sans"
                            >
-                              <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider">Créer une nouvelle offre d'emploi</h4>
+                              <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider">Créer une nouvelle mission</h4>
                               <form onSubmit={handleAdminCreateJob} className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                  <div className="md:col-span-2">
                                     <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Titre de l'annonce</label>
                                     <input 
                                       required 
                                       className="w-full bg-slate-50 px-3 py-2 text-xs rounded-lg border-none focus:ring-1 focus:ring-emerald-500 outline-none h-10 font-semibold" 
-                                      placeholder="ex: Nounou logée à domicile"
+                                      placeholder="ex: Réparation d'une fuite d'eau"
                                       value={adminJobForm.title} 
                                       onChange={e => setAdminJobForm({...adminJobForm, title: e.target.value})} 
                                     />
@@ -1724,7 +1718,7 @@ export function DashboardView({
                                 <tbody className="divide-y divide-slate-100">
                                    {myJobs.length === 0 ? (
                                      <tr>
-                                       <td colSpan={6} className="px-6 py-12 text-center text-slate-400 font-medium bg-slate-50/20">Aucune annonce publiée pour le moment.</td>
+                                       <td colSpan={6} className="px-6 py-12 text-center text-slate-400 font-medium bg-slate-50/20">Aucune mission publiée pour le moment.</td>
                                      </tr>
                                    ) : (
                                      myJobs.map(job => (
@@ -1790,7 +1784,7 @@ export function DashboardView({
                                 <thead className="bg-slate-50/75 border-b border-slate-100 text-[10px] uppercase font-bold text-slate-400">
                                    <tr>
                                       <th className="px-6 py-4">Artisan</th>
-                                      <th className="px-6 py-4">Annonce Concernée</th>
+                                      <th className="px-6 py-4">Mission concernée</th>
                                       <th className="px-6 py-4">Message</th>
                                       <th className="px-6 py-4">État de la relation</th>
                                       <th className="px-6 py-4 text-right">Actions</th>
@@ -1799,7 +1793,7 @@ export function DashboardView({
                                 <tbody className="divide-y divide-slate-100">
                                    {apps.length === 0 ? (
                                      <tr>
-                                       <td colSpan={5} className="px-6 py-12 text-center text-slate-400 font-medium bg-slate-50/20">Aucune candidature globale à afficher.</td>
+                                       <td colSpan={5} className="px-6 py-12 text-center text-slate-400 font-medium bg-slate-50/20">Aucune offre à afficher.</td>
                                      </tr>
                                    ) : (
                                      apps.map(app => (
@@ -1868,7 +1862,7 @@ export function DashboardView({
                  <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div>
                        <h2 className="text-2xl font-black text-slate-900 tracking-tight">Mon Profil Professionnel</h2>
-                       <p className="text-xs text-slate-400 font-bold uppercase tracking-wider font-sans mt-1">Gérez vos informations personnelles et votre CV pour postuler rapidement</p>
+                       <p className="text-xs text-slate-400 font-bold uppercase tracking-wider font-sans mt-1">Présentez vos métiers et vos zones d'intervention : les clients les voient avec vos offres</p>
                     </div>
                     {successMsg && (
                        <div className="bg-emerald-50 border border-emerald-100 text-emerald-800 px-4 py-2.5 rounded-2xl text-xs font-bold flex items-center gap-2 shadow-sm animate-bounce">
@@ -1902,7 +1896,7 @@ export function DashboardView({
                        <div className="border-t border-slate-50 pt-4 flex justify-around text-center">
                           <div>
                              <p className="text-xs font-black text-slate-800">{profile.role === 'candidate' ? apps.length : myJobs.length}</p>
-                             <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wider">{profile.role === 'candidate' ? 'Postulations' : 'Offres créées'}</p>
+                             <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wider">{profile.role === 'candidate' ? 'Offres envoyées' : 'Missions publiées'}</p>
                           </div>
                           <div className="border-r border-slate-100 h-8 self-center"></div>
                           <div>
@@ -1980,94 +1974,12 @@ export function DashboardView({
                              </div>
 
                              {profile.role === 'candidate' && (
-                                <div className="space-y-3">
-                                   <label className="text-[10px] uppercase font-black text-slate-400 block mb-2">Compétences Professionnelles</label>
-                                   <div className="flex flex-wrap gap-1.5">
-                                      {['Cuisine locale', 'Garde enfants', 'Chauffeur', 'Entretien de maison', 'Lavage & Repassage', 'Soin animaux', 'Aide devoirs', 'Secourisme'].map(skill => {
-                                        const isSelected = editSkills.includes(skill);
-                                        return (
-                                          <button
-                                            type="button"
-                                            key={skill}
-                                            onClick={() => {
-                                              if (isSelected) {
-                                                setEditSkills(prev => prev.filter(s => s !== skill));
-                                              } else {
-                                                setEditSkills(prev => [...prev, skill]);
-                                              }
-                                            }}
-                                            className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase transition-all ${isSelected ? 'bg-slate-900 text-white shadow-sm' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'}`}
-                                          >
-                                            {skill}
-                                          </button>
-                                        );
-                                      })}
-                                   </div>
-                                </div>
-                             )}
-
-                             {/* Candidate CV Section */}
-                             {profile.role === 'candidate' && (
-                                <div className="space-y-3 border-t border-slate-50 pt-6">
-                                   <label className="text-[10px] uppercase font-black text-slate-400 block">
-                                      Curriculum Vitae (CV) Officiel
-                                   </label>
-
-                                   {!profileCvFile ? (
-                                      <div 
-                                        onDragOver={(e) => { e.preventDefault(); setIsProfileCvDragging(true); }}
-                                        onDragLeave={() => setIsProfileCvDragging(false)}
-                                        onDrop={handleProfileCvDrop}
-                                        onClick={triggerProfileCvSelect}
-                                        className={`border-2 border-dashed rounded-3xl p-6 text-center cursor-pointer transition-all ${
-                                          isProfileCvDragging 
-                                            ? 'border-emerald-500 bg-emerald-50/20' 
-                                            : 'border-slate-200 hover:border-emerald-400 hover:bg-slate-50/50'
-                                        }`}
-                                      >
-                                         <input 
-                                           type="file" 
-                                           ref={profileFileInputRef} 
-                                           onChange={handleProfileCvSelect} 
-                                           accept=".pdf,.doc,.docx" 
-                                           className="hidden" 
-                                         />
-                                         <UploadCloud className="h-8 w-8 text-slate-400 mx-auto mb-2" />
-                                         <p className="text-xs font-bold text-slate-750">Parcourez ou glissez votre CV ici</p>
-                                         <p className="text-[10px] text-slate-400 mt-1">Sert de CV par défaut pour postuler en 1 clic</p>
-                                      </div>
-                                   ) : (
-                                      <div className="bg-emerald-50/50 border border-emerald-100 rounded-2xl p-4 flex items-center justify-between">
-                                         <div className="flex items-center gap-3">
-                                            <div className="w-9 h-9 bg-emerald-600 text-white rounded-xl flex items-center justify-center font-bold text-sm">
-                                               📄
-                                            </div>
-                                            <div className="min-w-0">
-                                               <p className="text-xs font-bold text-slate-800 truncate max-w-[200px]">{profileCvFile.name}</p>
-                                               <div className="flex items-center gap-1.5 mt-0.5">
-                                                  <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1 rounded font-black uppercase">ENREGISTRÉ</span>
-                                                  {profileCvFile.content && (
-                                                    <button 
-                                                      type="button"
-                                                      onClick={() => setPreviewCv({ name: profileCvFile.name, url: profileCvFile.content! })}
-                                                      className="text-[9px] underline font-bold text-emerald-700 hover:text-emerald-900"
-                                                    >
-                                                      [👁️ Aperçu]
-                                                    </button>
-                                                  )}
-                                               </div>
-                                            </div>
-                                         </div>
-                                         <button 
-                                           type="button" 
-                                           onClick={() => setProfileCvFile(null)}
-                                           className="p-1.5 hover:bg-emerald-100 rounded-lg text-emerald-800 transition-all font-semibold"
-                                         >
-                                            <Trash2 className="h-4 w-4 text-red-500" />
-                                         </button>
-                                      </div>
-                                   )}
-                                </div>
+                                <ArtisanProfileFields
+                                  trades={editTrades} setTrades={setEditTrades}
+                                  skills={editSkills} setSkills={setEditSkills}
+                                  experience={editExperience} setExperience={setEditExperience}
+                                  serviceCities={editServiceCities} setServiceCities={setEditServiceCities}
+                                />
                              )}
 
                              <div className="border-t border-slate-55 pt-6 flex justify-end">
@@ -2125,10 +2037,10 @@ export function DashboardView({
                            </h4>
                            <p className="text-xs text-slate-500 mt-1 leading-relaxed">
                              {profile.isVerified 
-                               ? 'Votre identité a été validée par nos agents IvoSource. Vous bénéficiez désormais d’une priorité maximale dans les recherches de candidats.'
+                               ? 'Votre identité a été validée par nos équipes. Votre profil affiche le badge « Certifié » auprès des clients, ce qui renforce leur confiance.'
                                : profile.verificationDocs && profile.verificationDocs.length > 0
                                  ? 'Vos pièces justificatives sont en cours d’audit. Validation sous 24h ouvrées. Vous recevrez une notification par email.'
-                                 : 'Pour obtenir le statut d\'artisan certifié, déposez vos documents officiels. Nos équipes valideront vos informations sous 24h.'}
+                                 : 'Pour obtenir le badge « Certifié », déposez vos documents officiels. Nos équipes valideront vos informations sous 24h.'}
                            </p>
                         </div>
                      </div>
@@ -2452,13 +2364,11 @@ export function DashboardView({
                         referrerPolicy="no-referrer"
                       />
                       <div>
-                        <span className="text-[10px] font-bold text-emerald-300 uppercase tracking-widest block">Recrutement direct</span>
+                        <span className="text-[10px] font-bold text-emerald-300 uppercase tracking-widest block">Fiche artisan</span>
                         <h4 className="text-xl font-black tracking-tight">
-                          {checkoutStep === 'details' || checkoutStep === 'success' 
-                            ? (selectedApplication?.candidateName || selectedCandidate.displayName)
-                            : ((selectedApplication?.candidateName || selectedCandidate.displayName).replace(/ .*/,'') + ' **')}
+                          {(selectedApplication?.candidateName || selectedCandidate.displayName)}
                         </h4>
-                        <p className="text-xs text-white/85 capitalize font-medium">📍 {selectedCandidate.location || 'Abidjan'} • {selectedCandidate.skills?.[0] || 'Candidat de Maison'}</p>
+                        <p className="text-xs text-white/85 capitalize font-medium">📍 {selectedCandidate.location || 'Abidjan'} • {selectedCandidate.skills?.[0] || 'Artisan'}</p>
                       </div>
                     </div>
                  </div>
@@ -2466,21 +2376,10 @@ export function DashboardView({
                  {/* Modal Body */}
                  <div className="p-6 md:p-8 space-y-6">
 
-                    {/* DETAILS VIEW OR SUCCESS VIEW */}
-                    {(checkoutStep === 'details' || checkoutStep === 'success') && (
+                    {/* Détails de la fiche */}
+                    {selectedCandidate && (
                       <div className="space-y-6">
                         
-                        {/* If checkout success trigger was active */}
-                        {checkoutStep === 'success' && (
-                          <div className="bg-emerald-50 text-emerald-800 p-4 rounded-2xl border border-emerald-100 flex items-center gap-3 text-left">
-                            <div className="w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center font-bold shrink-0">✓</div>
-                            <div>
-                              <p className="font-black text-xs">Paiement Reçu ! Accès Débloqué !</p>
-                              <p className="text-[10px] text-emerald-700/80">Merci pour votre confiance. Voici les coordonnées directes du personnel de maison.</p>
-                            </div>
-                          </div>
-                        )}
-
                         {/* Dynamic application detail overlays */}
                         {selectedApplication && (
                           <div className="space-y-3 font-sans text-left">
@@ -2516,7 +2415,7 @@ export function DashboardView({
 
                             {selectedApplication.message && (
                               <div className="bg-slate-50 text-xs italic text-slate-600 p-4 rounded-2xl border border-slate-100 text-left leading-relaxed">
-                                <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400 not-italic mb-1">Message du candidat :</div>
+                                <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400 not-italic mb-1">Message de l'artisan :</div>
                                 "{selectedApplication.message}"
                               </div>
                             )}
@@ -2547,21 +2446,21 @@ export function DashboardView({
                            <div className="flex items-center justify-between">
                              <span className="text-slate-400 font-medium">Téléphone direct :</span>
                              <span className="font-mono font-black text-slate-900 bg-white border border-slate-150 px-2.5 py-1 rounded-lg flex items-center gap-1.5">
-                               <Phone className="h-3.5 w-3.5 text-emerald-600" /> {selectedCandidate.phone || '+225 07 48 92 11 02'}
+                               <Phone className="h-3.5 w-3.5 text-emerald-600" /> {selectedCandidate.phone || 'Non renseigné'}
                              </span>
                            </div>
 
                            <div className="flex items-center justify-between">
                              <span className="text-slate-400 font-medium">Adresse email :</span>
                              <span className="font-mono font-black text-emerald-700 bg-emerald-50 border border-emerald-100 px-2.5 py-1 rounded-lg flex items-center gap-1.5">
-                               <Mail className="h-3.5 w-3.5 shrink-0" /> {selectedCandidate.email || 'candidat@ivoiresource.ci'}
+                               <Mail className="h-3.5 w-3.5 shrink-0" /> {selectedCandidate.email || 'Non renseignée'}
                              </span>
                            </div>
                         </div>
 
                         <div className="flex gap-2 text-xs">
                            <a 
-                             href={`https://wa.me/${(selectedCandidate.phone || '0748921102').replace(/[^0-9]/g,'')}`}
+                             href={selectedCandidate.phone ? `https://wa.me/${selectedCandidate.phone.replace(/[^0-9]/g,'')}` : undefined}
                              target="_blank"
                              rel="noopener noreferrer"
                              className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 uppercase tracking-wide cursor-pointer transition-all"
@@ -2842,7 +2741,7 @@ export function DashboardView({
                         CV : {previewCv.name}
                       </h4>
                       <p className="text-[10px] font-medium text-slate-400">
-                        Aperçu sécurisé du document candidat
+                        Aperçu sécurisé du document de l'artisan
                       </p>
                     </div>
                   </div>
@@ -2942,7 +2841,7 @@ export function DashboardView({
                   {isEditingJob ? (
                     <form onSubmit={handleUpdateJob} className="space-y-4 text-left">
                       <div>
-                        <label className="text-[10px] uppercase font-semibold text-slate-400 block mb-1">Intitulé du poste</label>
+                        <label className="text-[10px] uppercase font-semibold text-slate-400 block mb-1">Titre de la mission</label>
                         <input 
                           required 
                           className="w-full bg-slate-50 px-4 py-3 rounded-xl border-none focus:ring-1 focus:ring-emerald-500 outline-none h-12 font-semibold text-slate-800" 
@@ -3014,7 +2913,7 @@ export function DashboardView({
                   ) : (
                     <div className="space-y-4 text-left">
                       <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100/40">
-                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Intitulé du poste</p>
+                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Titre de la mission</p>
                         <p className="text-sm font-bold text-slate-800">{selectedManageJob.title}</p>
                       </div>
 

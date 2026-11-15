@@ -10,6 +10,16 @@ export const CATEGORIES = [
   { id: 'autre', label: 'Autre', icon: '🛠️' },
 ];
 
+// Spécialités proposées selon le métier (l'artisan peut aussi en ajouter librement).
+export const SPECIALTIES: Record<string, string[]> = {
+  plomberie: ['Fuite d\'eau', 'Débouchage', 'Installation sanitaire', 'Chauffe-eau', 'Robinetterie', 'Réseau d\'eau'],
+  electricite: ['Dépannage', 'Installation électrique', 'Tableau électrique', 'Éclairage', 'Mise aux normes', 'Groupe électrogène'],
+  climatisation: ['Installation split', 'Entretien', 'Recharge de gaz', 'Dépannage', 'Réfrigération'],
+  peinture: ['Peinture intérieure', 'Peinture extérieure', 'Enduit & lissage', 'Décoration', 'Ravalement de façade'],
+  menage: ['Ménage régulier', 'Grand ménage', 'Repassage', 'Entretien de bureaux', 'Après travaux'],
+  autre: ['Menuiserie', 'Carrelage', 'Maçonnerie', 'Serrurerie', 'Soudure', 'Jardinage'],
+};
+
 // Taux de commission AFFICHÉ au client et à l'artisan. Le taux réellement appliqué est celui du
 // serveur (variable COMMISSION_RATE) : gardez les deux valeurs identiques.
 const rawRate = Number(import.meta.env.VITE_COMMISSION_RATE ?? '0.12');

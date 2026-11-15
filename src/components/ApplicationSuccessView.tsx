@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { CheckCircle2, MapPin, CreditCard, Calendar, ArrowRight, ShieldCheck, Sparkles } from 'lucide-react';
 import { JobPost } from '../types';
+import { CATEGORIES } from '../constants';
 
 interface ApplicationSuccessViewProps {
   job: JobPost | null;
@@ -70,7 +71,7 @@ export function ApplicationSuccessView({ job, onClose, onGoToDashboard }: Applic
             Offre envoyée !
           </h2>
           <p className="text-xs text-slate-400 mt-2 max-w-xs font-medium">
-            Votre profil a été transmis avec succès à l'employeur.
+            Votre offre a été transmise au client.
           </p>
         </div>
 
@@ -82,7 +83,7 @@ export function ApplicationSuccessView({ job, onClose, onGoToDashboard }: Applic
             </div>
             <div className="min-w-0 flex-1">
               <span className="text-[9px] font-black text-emerald-600 tracking-wider uppercase bg-emerald-50 px-2 py-0.5 rounded">
-                {job.category || "Emploi"}
+                {CATEGORIES.find(c => c.id === job.category)?.label || job.category || "Mission"}
               </span>
               <h4 className="font-bold text-slate-800 text-md mt-1 truncate leading-tight">
                 {job.title}

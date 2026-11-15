@@ -19,7 +19,13 @@ export interface UserProfile {
   photoURL?: string;
   location?: string;
   bio?: string;
+  /** Spécialités libres (ex: « Débouchage »). */
   skills: string[];
+  /** Métiers exercés : identifiants de CATEGORIES (ex: « plomberie »). Artisans uniquement. */
+  trades?: string[];
+  experienceYears?: number;
+  /** Villes où l'artisan accepte d'intervenir. */
+  serviceCities?: string[];
   isVerified: boolean;
   isPremium: boolean;
   averageRating: number;
@@ -83,6 +89,8 @@ export interface Application {
   proposedPrice?: number;
   /** Délai / disponibilité annoncé (texte libre). */
   delay?: string;
+  /** Métiers de l'artisan au moment de l'offre (copiés de son profil par le serveur). */
+  trades?: string[];
   createdAt: string;
   candidateName?: string;
   photoURL?: string;

@@ -16,6 +16,8 @@ interface JobListViewProps {
   isEmployer?: boolean;
   onSeed?: () => void;
   onSelectJob: (job: JobPost) => void;
+  /** Métiers de l'artisan connecté : active le filtre « Mes métiers ». */
+  myTrades?: string[];
 }
 
 export function JobListView({
@@ -29,12 +31,15 @@ export function JobListView({
   onPostJob,
   isEmployer,
   onSeed,
-  onSelectJob
+  onSelectJob,
+  myTrades
 }: JobListViewProps) {
   const [showFilters, setShowFilters] = useState(false);
   const [sortBy, setSortBy] = useState<'newest' | 'oldest'>('newest');
+  const [onlyMine, setOnlyMine] = useState(false);
 
-  const sortedJobs = [...jobs].sort((a, b) => {
+  const visibleJobs = onlyMine && myTrades?.length ? jobs.filter(j => myTrades.includes(j.category)) : jobs;
+  const sortedJobs = [...visibleJobs].sort((a, b) => {
     const timeA = new Date(a.createdAt || 0).getTime();
     const timeB = new Date(b.createdAt || 0).getTime();
     return sortBy === 'newest' ? timeB - timeA : timeA - timeB;
@@ -84,6 +89,15 @@ export function JobListView({
               </button>
               
               <div className="flex gap-2">
+                {!!myTrades?.length && (
+                  <button
+                    onClick={() => setOnlyMine(!onlyMine)}
+                    aria-pressed={onlyMine}
+                    className={`px-4 py-2.5 rounded-xl text-xs font-bold border transition-all whitespace-nowrap ${onlyMine ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-700 border-slate-200 hover:border-emerald-300'}`}
+                  >
+                    Mes métiers
+                  </button>
+                )}
                 {isEmployer && (
                   <button onClick={onPostJob} className="bg-slate-900 text-white px-5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 hover:scale-105 transition-all whitespace-nowrap">
                     <PlusCircle className="h-4 w-4" /> Publier

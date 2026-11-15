@@ -17,7 +17,9 @@ export function parseProfile(doc: any, uid?: string): UserProfile {
   if (typeof verificationDocs === 'string') {
     try { verificationDocs = JSON.parse(verificationDocs); } catch { verificationDocs = []; }
   }
-  return { ...doc, uid: uid || doc.uid || doc.$id, verificationDocs } as UserProfile;
+  // Les champs système Appwrite ($id, $permissions…) ne doivent jamais être réécrits dans la base.
+  const clean = Object.fromEntries(Object.entries(doc).filter(([k]) => !k.startsWith('$')));
+  return { ...clean, uid: uid || doc.uid || doc.$id, verificationDocs } as UserProfile;
 }
 
 export const profileService = {
