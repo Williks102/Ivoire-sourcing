@@ -7,7 +7,8 @@
     "dev": "vercel dev",
     "build": "vite build",
     "preview": "vite preview",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "setup:appwrite": "tsx scripts/setup-appwrite.ts"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",

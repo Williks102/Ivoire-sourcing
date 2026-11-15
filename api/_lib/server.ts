@@ -66,9 +66,10 @@ export const db = {
     const { database } = config();
     return appwrite('PATCH', `/databases/${database}/collections/${collection}/documents/${encodeURIComponent(id)}`, { data });
   },
-  async create(collection: string, id: string, data: Record<string, unknown>) {
+  /** `id` peut valoir 'unique()' pour laisser Appwrite générer l'identifiant. `permissions` : ex. ['read("user:abc")']. */
+  async create(collection: string, id: string, data: Record<string, unknown>, permissions: string[] = []) {
     const { database } = config();
-    return appwrite('POST', `/databases/${database}/collections/${collection}/documents`, { documentId: id, data });
+    return appwrite('POST', `/databases/${database}/collections/${collection}/documents`, { documentId: id, data, permissions });
   },
   async listEqual(collection: string, attribute: string, value: string) {
     const { database } = config();
@@ -125,4 +126,14 @@ export function readBody(req: VercelRequest): Record<string, any> {
     try { return JSON.parse(body); } catch { return {}; }
   }
   return body && typeof body === 'object' ? body : {};
+}
+
+/** Retire le HTML et les caractères de gabarit, puis borne la longueur. */
+export function sanitizeText(input: unknown, maxLength = 5000): string {
+  if (typeof input !== 'string') return '';
+  return input
+    .replace(/<\/?[^>]+(>|$)/g, '')
+    .substring(0, maxLength)
+    .replace(/[`${}]/g, '')
+    .trim();
 }

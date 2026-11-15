@@ -1,4 +1,4 @@
-import { ID, Query } from 'appwrite';
+import { Query } from 'appwrite';
 import { databases, APPWRITE_CONFIG } from '../lib/appwrite';
 import { authFetch } from '../lib/api';
 import { Application, JobPost } from '../types';
@@ -50,37 +50,34 @@ export const missionService = {
     return withId<JobPost>(await databases.getDocument(DB, 'jobs', id));
   },
 
-  /** Publie une mission (le montant de paiement n'est pas fixé ici : voir l'offre acceptée). */
-  async createMission(data: Omit<JobPost, 'id' | 'createdAt'>) {
-    return databases.createDocument(DB, 'jobs', ID.unique(), { ...data, createdAt: new Date().toISOString() });
-  },
+  /** Publie une mission via le serveur (modération + identité vérifiées côté serveur). */
+  createMission: (input: {
+    title: string;
+    description: string;
+    category: string;
+    location: string;
+    address?: string;
+    scheduledDate?: string;
+    budget: number;
+  }) => authFetch<{ id: string; status: 'approved' | 'pending' }>('/api/missions/create', input),
 
-  /** Envoie une offre (devis) sur une mission. */
-  async submitOffer(input: {
+  /** Envoie une offre (devis) sur une mission, via le serveur. */
+  submitOffer: (input: {
     mission: JobPost;
-    artisanId: string;
     artisanName: string;
-    photoURL?: string;
     experienceYears: number;
     proposedPrice: number;
     delay: string;
     message: string;
-  }) {
-    const { mission } = input;
-    return databases.createDocument(DB, 'applications', ID.unique(), {
-      jobId: mission.id,
-      employerId: mission.employerId,
-      candidateId: input.artisanId,
-      candidateName: input.artisanName,
-      photoURL: input.photoURL,
+  }) =>
+    authFetch('/api/missions/offer', {
+      missionId: input.mission.id,
+      artisanName: input.artisanName,
       experienceYears: input.experienceYears,
-      proposedPrice: Math.round(input.proposedPrice),
+      proposedPrice: input.proposedPrice,
       delay: input.delay,
       message: input.message,
-      status: 'pending',
-      createdAt: new Date().toISOString(),
-    });
-  },
+    }),
 
   // --- Transitions contrôlées par le serveur ---
   acceptOffer: (missionId: string, applicationId: string) =>

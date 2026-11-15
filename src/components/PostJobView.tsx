@@ -35,45 +35,23 @@ export function PostJobView({ onPosted, profile }: PostJobViewProps) {
     setSubmitting(true);
     setNotice('');
     try {
-      // Modération : en cas d'échec ou d'indisponibilité, la mission part en revue manuelle (jamais validée d'office).
-      let status: 'approved' | 'pending' = 'pending';
-      try {
-        const modRes = await fetch('/api/moderation/check-job', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title: formData.title, description: formData.description }),
-        });
-        if (modRes.ok) {
-          const mod = await modRes.json();
-          if (mod.approved) status = 'approved';
-          else if (!mod.review) {
-            setNotice('Annonce refusée par la modération : ' + (mod.reason || 'contenu non conforme.'));
-            return;
-          }
-        }
-      } catch (apiErr) {
-        console.warn('Modération indisponible, passage en revue manuelle:', apiErr);
-      }
-
-      await missionService.createMission({
-        employerId: profile.uid,
+      const result = await missionService.createMission({
         title: formData.title.trim(),
         description: formData.description.trim(),
         category: formData.category,
         location: formData.location,
-        address: formData.address.trim(),
+        address: formData.address.trim() || undefined,
         scheduledDate: formData.scheduledDate || undefined,
         budget,
-        status,
-      } as any);
+      });
 
-      if (status === 'pending') {
+      if (result.status === 'pending') {
         alert("Votre mission est en cours de vérification. Elle sera publiée dès validation.");
       }
       onPosted();
     } catch (err: any) {
       console.error('Publication de la mission impossible:', err);
-      setNotice("La mission n'a pas pu être publiée. Vérifiez votre connexion et réessayez.");
+      setNotice(err?.message || "La mission n'a pas pu être publiée. Vérifiez votre connexion et réessayez.");
     } finally {
       setSubmitting(false);
     }

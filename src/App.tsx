@@ -592,9 +592,7 @@ export default function App() {
     try {
       await missionService.submitOffer({
         mission: applyingJob,
-        artisanId: user.$id,
         artisanName: data.artisanName,
-        photoURL: profile?.photoURL,
         experienceYears: data.experienceYears,
         proposedPrice: data.proposedPrice,
         delay: data.delay,
@@ -612,7 +610,7 @@ export default function App() {
       setShowApplySuccess(true);
     } catch (err) {
       console.error("Envoi de l'offre impossible:", err);
-      addToast("⚠️ Votre offre n'a pas pu être envoyée. Réessayez.", 'error');
+      addToast(`⚠️ ${(err as Error)?.message || "Votre offre n'a pas pu être envoyée. Réessayez."}`, 'error');
     }
   };
 

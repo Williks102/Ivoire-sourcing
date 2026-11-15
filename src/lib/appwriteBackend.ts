@@ -30,7 +30,19 @@ export const where = (field: string, op: string, value: any): string => {
 export const limit = (count: number): string => Query.limit(count);
 export const query = (ref: CompatCollectionRef, ...queries: string[]): CompatQuery => ({ collectionId: ref.collectionId, queries });
 
-const normalizeData = (document: any) => ({ id: document.$id, uid: document.uid || document.$id, ...document });
+const normalizeData = (document: any) => {
+  const data: any = { id: document.$id, uid: document.uid || document.$id, ...document };
+  // Les champs liste d'objets sont stockés en JSON côté Appwrite.
+  if (typeof data.verificationDocs === 'string') {
+    try { data.verificationDocs = JSON.parse(data.verificationDocs); } catch { data.verificationDocs = []; }
+  }
+  return data;
+};
+const serializeData = (data: any) => {
+  const payload = { ...data };
+  if (Array.isArray(payload.verificationDocs)) payload.verificationDocs = JSON.stringify(payload.verificationDocs);
+  return payload;
+};
 const snapFromDocument = (document: any) => ({ id: document.$id, exists: () => true, data: () => normalizeData(document) });
 
 export const getDoc = async (ref: CompatDocRef) => {
@@ -52,7 +64,7 @@ export const getDocs = async (q: CompatQuery | CompatCollectionRef) => {
 };
 
 export const setDoc = async (ref: CompatDocRef, data: any, options?: { merge?: boolean }) => {
-  const payload = { ...data };
+  const payload = serializeData(data);
   delete payload.id;
   if (ref.collectionId === 'users' && !payload.uid) payload.uid = ref.id;
   if (options?.merge) {
@@ -71,7 +83,7 @@ export const setDoc = async (ref: CompatDocRef, data: any, options?: { merge?: b
 };
 
 export const addDoc = async (ref: CompatCollectionRef, data: any) => {
-  const document = await databases.createDocument(APPWRITE_CONFIG.DATABASE_ID, ref.collectionId, ID.unique(), data);
+  const document = await databases.createDocument(APPWRITE_CONFIG.DATABASE_ID, ref.collectionId, ID.unique(), serializeData(data));
   return { id: document.$id, ...document };
 };
 

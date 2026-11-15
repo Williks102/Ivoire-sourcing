@@ -17,7 +17,7 @@ serveur : **seul le serveur** écrit `agreedPrice`, `assignedArtisanId`, `paid*`
 `uid` string · `role` string (`candidate` = artisan, `employer` = client) · `displayName` string · `email` string ·
 `photoURL` string · `location` string · `bio` string · `skills` string[] · `isVerified` bool · `isPremium` bool ·
 `averageRating` float · `reviewCount` int · `phone` string · `cvName` string · `cvUrl` string · `createdAt` string ·
-`verificationDocs` string (JSON) 
+`verificationDocs` string (JSON ; à terme, stocker les fichiers dans Storage plutôt qu'en base64)
 
 ### `jobs` (= missions)
 `employerId` string · `title` string · `description` string · `category` string · `location` string · `address` string ·
@@ -42,18 +42,36 @@ Id du document = référence de paiement. `reference` string · `jobId` string �
 
 **Permissions : aucune pour les clients** (ni lecture ni écriture). Seule la clé API serveur y accède.
 
-## Permissions à régler dans la console (important)
+## Mise en place automatique
 
-Appwrite n'a pas de permissions par champ ; il faut donc que le navigateur ne puisse pas écrire les champs sensibles.
+Après avoir créé le projet Appwrite et une clé API (voir l'en-tête de `scripts/setup-appwrite.ts`) :
 
-- `jobs` : *Create* pour les utilisateurs connectés ; *Read* pour tous. **Pas d'Update/Delete côté client**
-  (document security activée, le créateur peut seulement lire). La modification d'une mission passe par le serveur.
-  Tant que le client peut mettre à jour `jobs`, il pourrait écrire `status: "paid"` : ne laissez pas cet accès.
-- `applications` : *Create* pour les utilisateurs connectés ; lecture réservée au client concerné (`employerId`) et
-  à l'artisan (`candidateId`) via les permissions de document ; **pas d'Update client** (le serveur gère `accepted`/`rejected`).
-- `users` : chaque utilisateur crée/modifie son propre document. Limite connue : `isVerified`, `averageRating`,
-  `reviewCount` restent modifiables par leur propriétaire ; à déplacer vers une fonction serveur.
-- `payments` : aucune permission client.
+```
+APPWRITE_ENDPOINT=https://cloud.appwrite.io/v1 APPWRITE_PROJECT_ID=... APPWRITE_API_KEY=... npm run setup:appwrite
+```
+
+Le script crée la base, les collections, les attributs, les index, les permissions et le bucket ; il peut être
+relancé sans risque (il réapplique les permissions). Il affiche à la fin les variables à copier dans Vercel.
+À faire à la main : ajouter une plateforme Web dans la console, et poser le label `admin` (voir plus bas).
+
+## Permissions (appliquées par le script)
+
+Appwrite n'a pas de permissions par champ ; la règle retenue est donc : **les clients n'écrivent pas** dans
+`jobs`, `applications` et `payments`. Tout passe par les fonctions serveur, qui vérifient l'identité (JWT) et les droits.
+
+| Collection | Client (utilisateur connecté) | Admin (label `admin`) | Serveur (clé API) |
+|---|---|---|---|
+| `jobs` | lecture publique, aucune écriture | lecture/écriture | création (`/api/missions/create`), transitions, paiement |
+| `applications` | lecture de ses propres offres (permission de document : client de la mission + artisan) | lecture/écriture | création (`/api/missions/offer`), acceptation |
+| `payments` | aucun accès | aucun accès | tout |
+| `users` | crée son profil, lit/modifie le sien | lecture/écriture | lecture |
+
+Conséquences : un client ne peut ni se faire passer pour un autre (`employerId` vient du JWT), ni contourner la
+modération, ni écrire `status: "paid"`. Limite connue : dans `users`, `isVerified`, `averageRating` et `reviewCount`
+restent modifiables par leur propriétaire ; à déplacer vers une fonction serveur.
+
+Les missions sont lisibles par tous, y compris celles en attente de modération et l'adresse saisie : n'y mettez
+pas d'information sensible.
 
 ## Administrateur
 

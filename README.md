@@ -10,6 +10,7 @@ Stack : Vite + React, Vercel (fonctions `/api`), Appwrite (auth, base, stockage)
 
 ```
 npm install
+npm run setup:appwrite       # crée la base Appwrite (voir docs/appwrite-schema.md)
 cp .env.example .env.local   # renseigner Appwrite, Paiement Pro, COMMISSION_RATE
 npm run dev                  # vercel dev
 ```
