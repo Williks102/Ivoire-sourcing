@@ -1,3 +1,6 @@
+// Rôles techniques conservés pour compatibilité avec les données existantes :
+//   'employer'  = Client (publie des missions et paie en fin de mission)
+//   'candidate' = Artisan / prestataire (propose des offres et réalise les missions)
 export type UserRole = 'employer' | 'candidate' | 'admin';
 
 export interface VerificationDoc {
@@ -28,17 +31,45 @@ export interface UserProfile {
   verificationDocs?: VerificationDoc[];
 }
 
+// Cycle de vie d'une mission (le paiement n'intervient qu'à la fin) :
+//   pending -> approved (ouverte) -> assigned -> completed -> paid
+export type MissionStatus =
+  | 'pending'   // en attente de modération
+  | 'approved'  // ouverte : reçoit des offres
+  | 'assigned'  // une offre acceptée, mission en cours
+  | 'completed' // terminée par l'artisan, en attente de validation + paiement du client
+  | 'paid'      // payée par le client
+  | 'rejected'
+  | 'closed';
+
+/** Une mission = une annonce publiée par un client (collection Appwrite `jobs`). */
 export interface JobPost {
   id: string;
   employerId: string;
   title: string;
   description: string;
-  category: 'nounou' | 'chauffeur' | 'boy' | 'cuisinier' | 'autre';
+  category: string;
   location: string;
-  salaryRange: string;
-  status: 'pending' | 'approved' | 'rejected' | 'closed';
-  isPremium: boolean;
+  address?: string;
+  scheduledDate?: string;
+  /** Budget indicatif du client, en FCFA. */
+  budget: number;
+  /** @deprecated ancien champ texte (recrutement) conservé pour lire les anciennes annonces. */
+  salaryRange?: string;
+  status: MissionStatus;
+  isPremium?: boolean;
   createdAt: string;
+  // Renseignés côté serveur uniquement :
+  assignedArtisanId?: string;
+  assignedApplicationId?: string;
+  agreedPrice?: number;
+  assignedAt?: string;
+  completedAt?: string;
+  paidAt?: string;
+  paymentReference?: string;
+  commissionAmount?: number;
+  artisanPayout?: number;
+  payoutStatus?: 'pending' | 'sent';
 }
 
 export interface Application {
@@ -46,8 +77,12 @@ export interface Application {
   jobId: string;
   candidateId: string;
   employerId: string;
-  status: 'pending' | 'accepted' | 'rejected' | 'approved'; // supporting both agreed/approved as used in UI/auth
+  status: 'pending' | 'accepted' | 'rejected' | 'approved'; // 'approved' = ancien libellé de 'accepted'
   message: string;
+  /** Prix proposé par l'artisan, en FCFA. Devient le prix convenu si l'offre est acceptée. */
+  proposedPrice?: number;
+  /** Délai / disponibilité annoncé (texte libre). */
+  delay?: string;
   createdAt: string;
   candidateName?: string;
   photoURL?: string;

@@ -28,8 +28,8 @@ import {
 } from 'lucide-react';
 import { db, auth, doc, setDoc, getDoc, deleteDoc, collection, query, where, limit, getDocs, signOut, getIsBackendAvailable } from '../lib/appwriteBackend';
 import { UserProfile, JobPost, Application, UserRole } from '../types';
-import { CITIES, CATEGORIES } from '../constants';
-import { OPERATORS_MAP, loadPaiementProScript } from './LandingView';
+import { CITIES, CATEGORIES, MISSION_STATUS_LABELS } from '../constants';
+import { ClientMissionsPanel, ArtisanMissionsPanel } from './MissionsPanel';
 
 enum OperationType {
   CREATE = 'create',
@@ -67,7 +67,7 @@ function handleAppwriteError(error: unknown, operationType: OperationType, path:
 interface DashboardViewProps {
   profile: UserProfile | null;
   user: any | null;
-  activeTab: 'overview' | 'verification' | 'my-jobs' | 'applications' | 'admin' | 'browse-candidates' | 'profile';
+  activeTab: 'overview' | 'verification' | 'my-jobs' | 'applications' | 'admin' | 'profile';
   setActiveTab: (tab: any) => void;
   onProfileUpdate: (p: UserProfile) => void;
   setView: (v: any) => void;
@@ -106,7 +106,7 @@ export function DashboardView({
   const [isEditingJob, setIsEditingJob] = useState(false);
   const [editJobForm, setEditJobForm] = useState({
     title: '',
-    category: 'nounou' as any,
+    category: 'plomberie' as any,
     location: '',
     salaryRange: '',
     description: '',
@@ -139,19 +139,7 @@ export function DashboardView({
   const [updatingProfile, setUpdatingProfile] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
 
-  const getJobStatusLabel = (status: string) => {
-    switch (status) {
-      case 'approved':
-        return { text: 'Approuvée', color: 'bg-emerald-50 text-emerald-600 border border-emerald-100/30' };
-      case 'rejected':
-        return { text: 'Rejetée / En suspens', color: 'bg-red-50 text-red-650 border border-red-100/30' };
-      case 'closed':
-        return { text: 'Clôturée', color: 'bg-slate-100 text-slate-500 border border-slate-200/30' };
-      case 'pending':
-      default:
-        return { text: 'En attente de validation', color: 'bg-amber-50 text-amber-600 border border-amber-100/30' };
-    }
-  };
+  const getJobStatusLabel = (status: string) => MISSION_STATUS_LABELS[status] || { text: status, color: 'bg-slate-100 text-slate-500' };
 
   // Admin Sub-Tab State ('users' | 'jobs' | 'applications')
   const [adminTab, setAdminTab] = useState<'users' | 'jobs' | 'applications'>('users');
@@ -170,7 +158,7 @@ export function DashboardView({
   });
   const [adminJobForm, setAdminJobForm] = useState({
     title: '',
-    category: 'nounou',
+    category: 'plomberie',
     location: 'Abidjan',
     salaryRange: '',
     description: '',
@@ -224,7 +212,7 @@ export function DashboardView({
 
       for (const jId of missingJobIds) {
         try {
-          const isDemo = !isBackendAvailable || (user?.uid?.startsWith('demo-') ?? true);
+          const isDemo = import.meta.env.DEV && (profile?.uid?.startsWith('demo-') ?? false);
           if (isDemo) {
             throw new Error("Client Offline Mode");
           }
@@ -251,7 +239,7 @@ export function DashboardView({
 
       for (const cId of missingCandIds) {
         try {
-          const isDemo = !isBackendAvailable || (user?.uid?.startsWith('demo-') ?? true);
+          const isDemo = import.meta.env.DEV && (profile?.uid?.startsWith('demo-') ?? false);
           if (isDemo) {
             throw new Error("Client Offline Mode");
           }
@@ -302,7 +290,7 @@ export function DashboardView({
 
   const updateAppStatus = async (appId: string, newStatus: string) => {
     try {
-      const isDemoMode = !isBackendAvailable || (user?.uid?.startsWith('demo-') ?? true);
+      const isDemoMode = import.meta.env.DEV && (profile.uid?.startsWith('demo-') ?? false);
       if (isDemoMode) {
         const localApps = JSON.parse(localStorage.getItem('offline_applications') || '[]');
         const idx = localApps.findIndex((a: any) => a.id === appId);
@@ -378,7 +366,7 @@ export function DashboardView({
         cvName: profileCvFile ? profileCvFile.name : '',
         cvUrl: profileCvFile ? profileCvFile.content : '',
       };
-      const isDemoMode = !isBackendAvailable || (user?.uid?.startsWith('demo-') ?? true);
+      const isDemoMode = import.meta.env.DEV && (profile.uid?.startsWith('demo-') ?? false);
       if (isDemoMode) {
         localStorage.setItem('demo_profile', JSON.stringify(updated));
         onProfileUpdate(updated);
@@ -386,12 +374,12 @@ export function DashboardView({
         setTimeout(() => setSuccessMsg(''), 4000);
         return;
       }
-      await setDoc(doc(db, 'users', user.uid), updated);
+      await setDoc(doc(db, 'users', profile.uid), updated);
       onProfileUpdate(updated);
       setSuccessMsg('Votre profil a été mis à jour de manière sécurisée !');
       setTimeout(() => setSuccessMsg(''), 4000);
     } catch (err) {
-      handleAppwriteError(err, OperationType.UPDATE, `users/${user.uid}`);
+      handleAppwriteError(err, OperationType.UPDATE, `users/${profile.uid}`);
     } finally {
       setUpdatingProfile(false);
     }
@@ -409,7 +397,7 @@ export function DashboardView({
         isVerified: false, // will require admin verification
         bio: (profile.bio || '') + `\n[ID Soumise pour CNI/Passeport: N° ${idNumber}]`
       };
-      const isDemoMode = !isBackendAvailable || (user?.uid?.startsWith('demo-') ?? true);
+      const isDemoMode = import.meta.env.DEV && (profile.uid?.startsWith('demo-') ?? false);
       if (isDemoMode) {
         localStorage.setItem('demo_profile', JSON.stringify(updated));
         onProfileUpdate(updated);
@@ -417,12 +405,12 @@ export function DashboardView({
         setIdNumber('');
         return;
       }
-      await setDoc(doc(db, 'users', user.uid), updated);
+      await setDoc(doc(db, 'users', profile.uid), updated);
       onProfileUpdate(updated);
       setVerificationFeedback('Votre demande de certification a été transmise aux administrateurs avec succès !');
       setIdNumber('');
     } catch (err) {
-      handleAppwriteError(err, OperationType.UPDATE, `users/${user.uid}`);
+      handleAppwriteError(err, OperationType.UPDATE, `users/${profile.uid}`);
     } finally {
       setIsSubmittingID(false);
     }
@@ -529,7 +517,7 @@ export function DashboardView({
         isVerified: false
       };
 
-      await setDoc(doc(db, 'users', user.uid), updatedProfile, { merge: true });
+      await setDoc(doc(db, 'users', profile.uid), updatedProfile, { merge: true });
       onProfileUpdate(updatedProfile);
       setVerificationSubmitFeedback('Vos documents ont été transmis avec succès et sont en cours d’examen par l’équipe d’administration d’IvoireSource !');
     } catch (err) {
@@ -618,7 +606,7 @@ export function DashboardView({
 
   // ADMIN CONTROLS: Moderate Job Post (Approve/Reject)
   const updateJobStatus = async (jobId: string, newStatus: 'approved' | 'rejected' | 'closed') => {
-    const isDemoMode = !isBackendAvailable || (user?.uid?.startsWith('demo-') ?? true);
+    const isDemoMode = import.meta.env.DEV && (profile.uid?.startsWith('demo-') ?? false);
     try {
       if (isDemoMode) {
         const localJobs = JSON.parse(localStorage.getItem('offline_jobs') || '[]');
@@ -660,7 +648,7 @@ export function DashboardView({
       title: "Supprimer l'offre",
       message: "Êtes-vous sûr de vouloir supprimer cette annonce définitivement ?",
       onConfirm: async () => {
-        const isDemoMode = !isBackendAvailable || (user?.uid?.startsWith('demo-') ?? true);
+        const isDemoMode = import.meta.env.DEV && (profile.uid?.startsWith('demo-') ?? false);
         try {
           if (isDemoMode) {
             const localJobs = JSON.parse(localStorage.getItem('offline_jobs') || '[]');
@@ -769,7 +757,7 @@ export function DashboardView({
         description: adminJobForm.description,
         category: adminJobForm.category as any,
         location: adminJobForm.location,
-        salaryRange: adminJobForm.salaryRange,
+        budget: Math.round(Number(String(adminJobForm.salaryRange).replace(/\s/g, ''))) || 0,
         status: 'approved',
         isPremium: adminJobForm.isPremium,
         createdAt: new Date().toISOString()
@@ -777,7 +765,7 @@ export function DashboardView({
       const { id, ...saveData } = newJobDoc;
       await setDoc(doc(db, 'jobs', fakeJobId), saveData);
       setMyJobs(prev => [newJobDoc, ...prev]);
-      setAdminJobForm({ title: '', category: 'nounou', location: 'Abidjan', salaryRange: '', description: '', isPremium: false, employerId: 'system' });
+      setAdminJobForm({ title: '', category: 'plomberie', location: 'Abidjan', salaryRange: '', description: '', isPremium: false, employerId: 'system' });
       setIsAdminCreatingJob(false);
       alert("Offre d'emploi créée avec succès !");
     } catch (err) {
@@ -790,9 +778,9 @@ export function DashboardView({
     setIsEditingJob(false);
     setEditJobForm({
       title: job.title || '',
-      category: job.category || 'nounou',
+      category: job.category || 'plomberie',
       location: job.location || '',
-      salaryRange: job.salaryRange || '',
+      salaryRange: String(job.budget || job.salaryRange || ''),
       description: job.description || '',
     });
   };
@@ -801,13 +789,13 @@ export function DashboardView({
     e.preventDefault();
     if (!selectedManageJob || !user) return;
     try {
-      const isDemoMode = !isBackendAvailable || (user?.uid?.startsWith('demo-') ?? true);
+      const isDemoMode = import.meta.env.DEV && (profile.uid?.startsWith('demo-') ?? false);
       const updatedJob: JobPost = {
         ...selectedManageJob,
         title: editJobForm.title,
         category: editJobForm.category as any,
         location: editJobForm.location,
-        salaryRange: editJobForm.salaryRange,
+        budget: Math.round(Number(String(editJobForm.salaryRange).replace(/\s/g, ''))) || 0,
         description: editJobForm.description,
       };
 
@@ -841,16 +829,16 @@ export function DashboardView({
     const checkProfile = async () => {
       if (!profile) {
         try {
-          const docRef = doc(db, 'users', user.uid);
+          const docRef = doc(db, 'users', profile.uid);
           const docSnap = await getDoc(docRef);
           if (docSnap.exists()) {
             const parsed = docSnap.data() as UserProfile;
             onProfileUpdate(parsed);
-            localStorage.setItem(`profile_${user.uid}`, JSON.stringify(parsed));
+            localStorage.setItem(`profile_${profile.uid}`, JSON.stringify(parsed));
           }
         } catch (err) {
           console.warn("Delayed profile fetch failed or offline, accessing caching:", err);
-          const cached = localStorage.getItem(`profile_${user.uid}`);
+          const cached = localStorage.getItem(`profile_${profile.uid}`);
           if (cached) {
             onProfileUpdate(JSON.parse(cached));
           }
@@ -865,7 +853,7 @@ export function DashboardView({
     
     const fetchData = async () => {
       setLoadingData(true);
-      const isDemoMode = !isBackendAvailable || (user?.uid?.startsWith('demo-') ?? true);
+      const isDemoMode = import.meta.env.DEV && (profile.uid?.startsWith('demo-') ?? false);
       try {
         if (isDemoMode) {
           throw new Error("Local Demo Mode Active");
@@ -885,33 +873,29 @@ export function DashboardView({
           setApps(snapApps.docs.map(d => ({ id: d.id, ...d.data() } as Application)));
         }
 
-        if (profile.role === 'employer' && activeTab === 'browse-candidates') {
-          const qCand = query(collection(db, 'users'), where('role', '==', 'candidate'), limit(50));
-          const snapCand = await getDocs(qCand);
-          setCandidates(snapCand.docs.map(d => d.data() as UserProfile));
-        }
-
         if (profile.role === 'employer') {
-          const qJobs = query(collection(db, 'jobs'), where('employerId', '==', user.uid));
+          const qJobs = query(collection(db, 'jobs'), where('employerId', '==', profile.uid));
           const snapJobs = await getDocs(qJobs);
           setMyJobs(snapJobs.docs.map(d => ({ id: d.id, ...d.data() } as JobPost)));
 
-          const qApps = query(collection(db, 'applications'), where('employerId', '==', user.uid));
+          const qApps = query(collection(db, 'applications'), where('employerId', '==', profile.uid));
           const snapApps = await getDocs(qApps);
           setApps(snapApps.docs.map(d => ({ id: d.id, ...d.data() } as Application)));
 
-          const qUnlocks = query(collection(db, 'unlocks'), where('employerId', '==', user.uid));
-          const snapUnlocks = await getDocs(qUnlocks);
-          setUnlockedCandidateIds(snapUnlocks.docs.map(doc => doc.data().candidateId as string));
         }
         
         if (profile.role === 'candidate') {
-          const qApps = query(collection(db, 'applications'), where('candidateId', '==', user.uid));
+          const qApps = query(collection(db, 'applications'), where('candidateId', '==', profile.uid));
           const snapApps = await getDocs(qApps);
           setApps(snapApps.docs.map(d => ({ id: d.id, ...d.data() } as Application)));
         }
       } catch (err) {
-        console.log("[DASHBOARD] Fetching offline/simulated simulation data", err);
+        if (!isDemoMode) {
+          console.error("[DASHBOARD] Chargement des données impossible:", err);
+          setMyJobs([]); setApps([]); setAllUsers([]); setCandidates([]);
+          return;
+        }
+        console.log("[DASHBOARD] Données de démonstration (mode DEV)", err);
         // Populating offline/simulated local data based on role
         if (profile.role === 'admin') {
           setAllUsers([
@@ -950,7 +934,7 @@ export function DashboardView({
               employerId: 'system',
               title: 'Nounou Plein Temps (Cocody)',
               description: 'Recherche nounou expérimentée pour garde de deux jumeaux de 2 ans. Références exigées.',
-              category: 'nounou',
+              category: 'plomberie',
               location: 'Abidjan',
               salaryRange: '120 000 FCFA',
               status: 'approved',
@@ -1001,16 +985,16 @@ export function DashboardView({
           ]);
 
           const localJobs = JSON.parse(localStorage.getItem('offline_jobs') || '[]');
-          setMyJobs(localJobs.filter((j: any) => j.employerId === user.uid));
+          setMyJobs(localJobs.filter((j: any) => j.employerId === profile.uid));
 
           const localApps = JSON.parse(localStorage.getItem('offline_applications') || '[]');
-          setApps(localApps.filter((a: any) => a.employerId === user.uid));
+          setApps(localApps.filter((a: any) => a.employerId === profile.uid));
           setUnlockedCandidateIds(['demo-candidate-uid-123']);
         }
 
         if (profile.role === 'candidate') {
           const localApps = JSON.parse(localStorage.getItem('offline_applications') || '[]');
-          setApps(localApps.filter((a: any) => a.candidateId === user.uid));
+          setApps(localApps.filter((a: any) => a.candidateId === profile.uid));
         }
       } finally {
         setLoadingData(false);
@@ -1022,7 +1006,7 @@ export function DashboardView({
 
   const viewCandidate = async (candidateId: string, app?: Application) => {
     try {
-      const isDemo = !isBackendAvailable || (user?.uid?.startsWith('demo-') ?? true);
+      const isDemo = import.meta.env.DEV && (profile?.uid?.startsWith('demo-') ?? false);
       if (isDemo) {
         throw new Error("Client Offline Mode");
       }
@@ -1065,136 +1049,7 @@ export function DashboardView({
     
     // Direct candidates are free, and jobs applications which are already accepted/approved are also free to email
     const isCandidateFree = profile?.role !== 'employer' || profile?.isPremium || unlockedCandidateIds.includes(candidateId) || (app && (app.status === 'accepted' || app.status === 'approved'));
-    setCheckoutStep(isCandidateFree ? 'details' : 'plans');
-  };
-
-  const startPaymentCheckout = (plan: 'one-time' | 'monthly') => {
-    setChosenPlan(plan);
-    setCheckoutStep('payment-method');
-  };
-
-  const executeMobileMoneyPayment = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!phoneNumber && paymentOperator !== 'card') {
-      setPaymentError('Veuillez entrer un numéro de téléphone mobile money.');
-      return;
-    }
-    setPaymentError('');
-    setCheckoutStep('processing');
-    setPaymentStatusMessage('Chargement du module de paiement officiel Paiement Pro...');
-
-    // Load PaiementPro script tag asynchronously
-    const loaded = await loadPaiementProScript();
-    const merchantId = import.meta.env.VITE_PAIEMENTPRO_MERCHANT_ID || '';
-    
-    const amountVal = chosenPlan === 'one-time' ? 15000 : 30000;
-    const descText = chosenPlan === 'one-time'
-      ? `Déblocage Candidat Certifié: ${selectedCandidate?.displayName}`
-      : 'Abonnement Mensuel Illimité - IvoireSource';
-
-    const cleanPhone = phoneNumber ? phoneNumber.trim().replace(/\s+/g, '') : '0700000000';
-    const emailVal = profile?.email || user?.email || 'employeur@ivoiresource.ci';
-    const fullName = profile?.displayName || 'Recruteur Ivoirien';
-    const names = fullName.split(' ');
-    const lastName = names[names.length - 1] || 'Recruteur';
-    const firstName = names.slice(0, -1).join(' ') || 'Utilisateur';
-
-    const opCode = OPERATORS_MAP[paymentOperator as keyof typeof OPERATORS_MAP]?.code || 'WAVECI';
-
-    if (merchantId && merchantId !== 'DEMO' && loaded) {
-      try {
-        setPaymentStatusMessage('Initialisation de la transaction sécurisée (Paiement Pro)...');
-        const paiementPro = new (window as any).PaiementPro(merchantId);
-        paiementPro.amount = amountVal;
-        paiementPro.channel = opCode;
-        paiementPro.description = descText;
-        paiementPro.referenceNumber = `IVS-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`;
-        paiementPro.customerEmail = emailVal;
-        paiementPro.customerFirstname = firstName;
-        paiementPro.customerLastname = lastName;
-        paiementPro.customerPhoneNumber = cleanPhone;
-        paiementPro.countryCurrencyCode = '952'; // Code devise FCFA
-        
-        // Wait for SDK to contact the webservice API and generate the URL
-        await paiementPro.getUrlPayment();
-        
-        if (paiementPro.success && paiementPro.url) {
-          setPaymentStatusMessage('Redirection vers la passerelle partenaire officielle...');
-          // Save a persistent unlock or state record in Appwrite first before redirecting so they have access
-          if (user && selectedCandidate) {
-            try {
-              if (chosenPlan === 'one-time') {
-                const unlockId = `${user.uid}_${selectedCandidate.uid}`;
-                await setDoc(doc(db, 'unlocks', unlockId), {
-                  id: unlockId,
-                  employerId: user.uid,
-                  candidateId: selectedCandidate.uid,
-                  createdAt: new Date().toISOString()
-                });
-                setUnlockedCandidateIds(prev => [...prev, selectedCandidate.uid]);
-              } else if (chosenPlan === 'monthly') {
-                await setDoc(doc(db, 'users', user.uid), {
-                  isPremium: true
-                }, { merge: true });
-                onProfileUpdate({
-                  ...profile,
-                  isPremium: true
-                });
-              }
-            } catch (pErr) {
-              console.warn('Failed pre-saving state:', pErr);
-            }
-          }
-          setTimeout(() => {
-            window.location.href = paiementPro.url;
-          }, 1200);
-          return;
-        } else {
-          console.warn('[Paiement Pro] getUrlPayment check returned failure, running simulation fallback:', paiementPro);
-        }
-      } catch (sdkErr) {
-        console.error('[Paiement Pro] SDK execution crash:', sdkErr);
-      }
-    }
-
-    // Interactive offline/sandbox fallback so users can test immediately in live preview
-    setPaymentStatusMessage(`Simulation : Demande de débit transmise au réseau ${opCode}...`);
-    
-    setTimeout(() => {
-      setPaymentStatusMessage(`Simulation : En attente de la saisie de votre code secret USSD sur le numéro +225 ${phoneNumber || '0700000000'}...`);
-    }, 1500);
-
-    setTimeout(() => {
-      setPaymentStatusMessage('Paiement validé avec succès ! Finalisation de vos accès...');
-    }, 3200);
-
-    setTimeout(async () => {
-      if (user && selectedCandidate) {
-        try {
-          if (chosenPlan === 'one-time') {
-            const unlockId = `${user.uid}_${selectedCandidate.uid}`;
-            await setDoc(doc(db, 'unlocks', unlockId), {
-              id: unlockId,
-              employerId: user.uid,
-              candidateId: selectedCandidate.uid,
-              createdAt: new Date().toISOString()
-            });
-            setUnlockedCandidateIds(prev => [...prev, selectedCandidate.uid]);
-          } else if (chosenPlan === 'monthly') {
-            await setDoc(doc(db, 'users', user.uid), {
-              isPremium: true
-            }, { merge: true });
-            onProfileUpdate({
-              ...profile,
-              isPremium: true
-            });
-          }
-        } catch (error) {
-          console.error("Failed to persist real unlock/subscription record:", error);
-        }
-      }
-      setCheckoutStep('success');
-    }, 4500);
+    setCheckoutStep('details');
   };
 
   if (!user) return null;
@@ -1210,10 +1065,9 @@ export function DashboardView({
   const menuItems = [
     { id: 'overview', label: "Aperçu", icon: <LayoutDashboard className="h-4 w-4" />, roles: ['candidate', 'employer', 'admin'] },
     { id: 'profile', label: "Mon Profil", icon: <UserIcon className="h-4 w-4" />, roles: ['candidate', 'employer', 'admin'] },
-    { id: 'browse-candidates', label: "Trouver du personnel", icon: <Users className="h-4 w-4" />, roles: ['employer'] },
-    { id: 'my-jobs', label: "Gérer mes annonces", icon: <BarChart3 className="h-4 w-4" />, roles: ['employer'] },
-    { id: 'applications', label: profile.role === 'employer' ? "Candidatures reçues" : "Mes postulations", icon: <Briefcase className="h-4 w-4" />, roles: ['candidate', 'employer'] },
-    { id: 'verification', label: "Certification", icon: <ShieldCheck className="h-4 w-4" />, roles: ['candidate', 'employer'] },
+    { id: 'my-jobs', label: "Mes missions", icon: <BarChart3 className="h-4 w-4" />, roles: ['employer'] },
+    { id: 'applications', label: "Mes missions & offres", icon: <Briefcase className="h-4 w-4" />, roles: ['candidate'] },
+    { id: 'verification', label: "Certification", icon: <ShieldCheck className="h-4 w-4" />, roles: ['candidate'] },
     { id: 'admin', label: "Système Admin", icon: <Settings className="h-4 w-4" />, roles: ['admin'] },
   ];
 
@@ -1312,19 +1166,19 @@ export function DashboardView({
                          <div className="absolute -right-4 -top-4 w-20 h-20 bg-amber-50 rounded-full transition-transform group-hover:scale-125"></div>
                          <p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.15em] mb-4 relative z-10 font-sans">Membres inscrits</p>
                          <h3 className="text-3xl font-black text-slate-900 relative z-10 font-sans">{allUsers.length}</h3>
-                         <p className="text-[10px] text-slate-400 mt-2 font-medium">Candidats & Recruteurs</p>
+                         <p className="text-[10px] text-slate-400 mt-2 font-medium">Artisans & Clients</p>
                       </div>
 
                       <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm relative overflow-hidden group hover:shadow-md transition-shadow">
                          <div className="absolute -right-4 -top-4 w-20 h-20 bg-emerald-50 rounded-full transition-transform group-hover:scale-125"></div>
-                         <p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.15em] mb-4 relative z-10 font-sans">Offres en ligne</p>
+                         <p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.15em] mb-4 relative z-10 font-sans">Missions en ligne</p>
                          <h3 className="text-3xl font-black text-slate-900 relative z-10 font-sans">{myJobs.length}</h3>
-                         <p className="text-[10px] text-slate-400 mt-2 font-medium">Annonces actives</p>
+                         <p className="text-[10px] text-slate-400 mt-2 font-medium">Missions ouvertes</p>
                       </div>
 
                       <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm relative overflow-hidden group hover:shadow-md transition-shadow">
                          <div className="absolute -right-4 -top-4 w-20 h-20 bg-blue-50 rounded-full transition-transform group-hover:scale-125"></div>
-                         <p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.15em] mb-4 relative z-10 font-sans">Candidatures</p>
+                         <p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.15em] mb-4 relative z-10 font-sans">Offres</p>
                          <h3 className="text-3xl font-black text-slate-900 relative z-10 font-sans">{apps.length}</h3>
                          <p className="text-[10px] text-slate-400 mt-2 font-medium">Mises en relation</p>
                       </div>
@@ -1356,7 +1210,7 @@ export function DashboardView({
 
                    <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm relative overflow-hidden group hover:shadow-md transition-shadow">
                       <div className="absolute -right-4 -top-4 w-20 h-20 bg-blue-50 rounded-full transition-transform group-hover:scale-125"></div>
-                      <p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.15em] mb-4 relative z-10">{profile.role === 'candidate' ? 'Postulations' : 'Annonces'}</p>
+                      <p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.15em] mb-4 relative z-10">{profile.role === 'candidate' ? 'Offres envoyées' : 'Missions'}</p>
                       <h3 className="text-3xl font-black text-slate-900 relative z-10">{profile.role === 'candidate' ? apps.length : myJobs.length}</h3>
                       <p className="text-[10px] text-slate-400 mt-2 font-medium">Activité totale</p>
                    </div>
@@ -1435,7 +1289,7 @@ export function DashboardView({
                                  <Settings className="h-6 w-6 text-slate-950" />
                               </div>
                               <h3 className="text-2xl font-black mb-4 tracking-tight leading-tight">Vous êtes connecté en tant qu'<span className="text-amber-400 underline decoration-2 underline-offset-4">Administrateur</span>.</h3>
-                              <p className="text-slate-400 text-sm leading-relaxed mb-8 max-w-sm">Gérez l'ensemble de la plateforme, examinez les candidatures globales et supervisez la plateforme.</p>
+                              <p className="text-slate-400 text-sm leading-relaxed mb-8 max-w-sm">Gérez la plateforme : validez les missions, certifiez les artisans et suivez les paiements.</p>
                               <button onClick={() => setActiveTab('admin')} className="mt-auto w-fit bg-amber-500 text-slate-950 font-black text-[10px] px-8 py-3 rounded-2xl transition-all hover:scale-105 active:scale-95 uppercase tracking-widest shadow-xl shadow-black/20">
                                  Ouvrir Système Admin
                               </button>
@@ -1449,7 +1303,7 @@ export function DashboardView({
                                <ShieldCheck className="h-6 w-6 text-white" />
                             </div>
                             <h3 className="text-2xl font-black mb-4 tracking-tight leading-tight">Optimisez votre <span className="text-emerald-400 underline decoration-2 underline-offset-4">Crédibilité</span>.</h3>
-                            <p className="text-slate-400 text-sm leading-relaxed mb-8 max-w-sm">Les profils certifiés reçoivent 3x plus d'offres et d'intérêt de la part des recruteurs.</p>
+                            <p className="text-slate-400 text-sm leading-relaxed mb-8 max-w-sm">Les artisans certifiés inspirent davantage confiance aux clients.</p>
                             <button onClick={() => setActiveTab('verification')} className="mt-auto w-fit bg-white text-slate-900 font-black text-[10px] px-8 py-3 rounded-2xl transition-all hover:scale-105 active:scale-95 uppercase tracking-widest shadow-xl shadow-black/20">
                                Certification CI-Identity
                             </button>
@@ -1461,8 +1315,8 @@ export function DashboardView({
                       {profile.role === 'employer' && (
                         <div className="bg-emerald-50 rounded-[32px] p-8 border border-emerald-100 flex items-center justify-between group hover:border-emerald-200 transition-all cursor-pointer" onClick={() => setView('post-job')}>
                            <div>
-                              <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-2">Recrutement Express</p>
-                              <h4 className="text-xl font-black text-emerald-900 tracking-tight">Nouvelle annonce ?</h4>
+                              <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-2">Nouvelle mission</p>
+                              <h4 className="text-xl font-black text-emerald-900 tracking-tight">Un besoin ? Publiez une mission</h4>
                               <p className="text-xs text-emerald-700/60 font-medium mt-1">Trouvez le personnel idéal en moins de 48h.</p>
                            </div>
                            <div className="w-12 h-12 bg-emerald-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-emerald-200 transition-transform group-hover:rotate-12">
@@ -1475,294 +1329,12 @@ export function DashboardView({
              </div>
            )}
 
-           {activeTab === 'browse-candidates' && (
-              <div className="space-y-6">
-                 <header>
-                    <h2 className="text-xl font-black text-slate-800 tracking-tight">Candidats Disponibles</h2>
-                    <p className="text-sm text-slate-400 font-medium">Parcourez les profils vérifiés sur IvoireSource.</p>
-                 </header>
-                 {loadingData ? (
-                   <div className="animate-pulse space-y-3">
-                     {[1, 2, 3].map(i => <div key={i} className="h-24 bg-slate-50 rounded-2xl"></div>)}
-                   </div>
-                 ) : candidates.length === 0 ? (
-                    <div className="text-center py-10 text-slate-300">Aucun candidat pour le moment.</div>
-                 ) : (
-                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {candidates.map(cand => (
-                        <div key={cand.uid} className="p-4 border border-slate-100 rounded-2xl flex flex-col gap-4 hover:border-emerald-200 transition-all bg-white">
-                           <div className="flex items-center gap-3">
-                              <img src={cand.photoURL || 'https://via.placeholder.com/60'} className="h-12 w-12 rounded-xl object-cover" />
-                              <div className="min-w-0">
-                                 <p className="font-bold text-slate-800 truncate">{cand.displayName}</p>
-                                 <div className="flex items-center gap-1">
-                                    <Star className="h-3 w-3 text-emerald-500 fill-emerald-500" />
-                                    <span className="text-[10px] font-bold text-slate-400">{cand.averageRating || 'N/A'}</span>
-                                    {cand.isVerified && <ShieldCheck className="h-3 w-3 text-emerald-600" />}
-                                 </div>
-                              </div>
-                           </div>
-                           <button onClick={() => viewCandidate(cand.uid)} className="w-full py-2 bg-slate-50 hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 text-[10px] font-bold rounded-lg transition-all uppercase tracking-widest">
-                              Voir Profil
-                           </button>
-                        </div>
-                      ))}
-                   </div>
-                 )}
-              </div>
+           {activeTab === 'my-jobs' && profile.role === 'employer' && (
+              <ClientMissionsPanel clientId={profile.uid} onPublish={() => setView('post-job')} />
            )}
 
-           {activeTab === 'my-jobs' && (
-              <div className="space-y-6">
-                 <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div className="space-y-1">
-                       <h2 className="text-xl font-black text-slate-800 tracking-tight">Mes Offres Publiées</h2>
-                       <p className="text-xs text-slate-400">Gérez, modifiez ou ajoutez de nouvelles offres d'emploi d'ici.</p>
-                    </div>
-                    <button
-                       onClick={() => setView('post-job')}
-                       className="flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-5 py-3 rounded-2xl shadow-lg shadow-emerald-100 hover:shadow-xl transition-all w-full sm:w-auto hover:scale-[1.02] active:scale-[0.98]"
-                    >
-                       <PlusCircle className="h-4 w-4" />
-                       Publier une offre
-                    </button>
-                 </header>
-                 {loadingData ? (
-                   <div className="animate-pulse space-y-3">
-                     {[1, 2].map(i => <div key={i} className="h-20 bg-slate-100 rounded-2xl"></div>)}
-                   </div>
-                 ) : myJobs.length === 0 ? (
-                   <div className="text-center py-12 px-6 bg-slate-50 border border-dashed border-slate-200 rounded-[24px] space-y-4">
-                     <Briefcase className="h-10 w-10 text-slate-300 mx-auto" />
-                     <div className="space-y-1 font-sans">
-                       <p className="font-bold text-slate-700 text-sm">Aucune offre publiée pour le moment</p>
-                       <p className="text-xs text-slate-400 max-w-sm mx-auto">Créez votre première annonce d'emploi pour commencer à recevoir des candidatures qualifiées dès aujourd'hui.</p>
-                     </div>
-                     <button
-                       onClick={() => setView('post-job')}
-                       className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-5 py-2.5 rounded-xl shadow-md shadow-emerald-100 hover:shadow-lg transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
-                     >
-                       <PlusCircle className="h-4 w-4" />
-                       Publier ma première offre
-                     </button>
-                   </div>
-                 ) : (
-                   <div className="space-y-3">
-                     {myJobs.map(job => (
-                       <div 
-                         key={job.id} 
-                         onClick={() => handleOpenManageJob(job)}
-                         className="p-4 bg-white border border-slate-100 rounded-2xl flex items-center justify-between hover:border-emerald-200 hover:shadow-sm cursor-pointer transition-all"
-                       >
-                         <div>
-                            <p className="font-bold text-slate-800">{job.title}</p>
-                            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                               <span className="text-xs text-slate-400 font-medium">{job.location}</span>
-                               <span className="text-xs text-slate-300">•</span>
-                               <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${getJobStatusLabel(job.status).color}`}>
-                                  {getJobStatusLabel(job.status).text}
-                               </span>
-                            </div>
-                         </div>
-                         <div className="flex items-center gap-2">
-                            <button 
-                              onClick={(e) => { e.stopPropagation(); handleOpenManageJob(job); }}
-                              className="text-xs font-bold text-emerald-600 hover:text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-xl transition-all uppercase tracking-wider h-8 flex items-center cursor-pointer font-sans"
-                            >
-                              Gérer
-                            </button>
-                            <ChevronRight className="h-4 w-4 text-slate-200" />
-                         </div>
-                       </div>
-                     ))}
-                   </div>
-                 )}
-              </div>
-           )}
-
-           {activeTab === 'applications' && (
-              <div className="space-y-6">
-                 <header>
-                    <h2 className="text-xl font-black text-slate-800 tracking-tight">{profile.role === 'candidate' ? 'Mes Candidatures' : 'Candidatures reçues'}</h2>
-                 </header>
-                 {loadingData ? (
-                   <div className="animate-pulse space-y-3">
-                     {[1, 2].map(i => <div key={i} className="h-20 bg-slate-100 rounded-2xl"></div>)}
-                   </div>
-                 ) : apps.length === 0 ? (
-                   <div className="text-center py-10 text-slate-400">
-                      <p>Aucune candidature à afficher.</p>
-                   </div>
-                 ) : (
-                   <div className="space-y-3">
-                     {apps.map(app => (
-                       <div key={app.id} className="bg-white border border-slate-100 rounded-3xl p-5 shadow-sm space-y-4 font-sans text-left">
-                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                            <div className="flex items-center gap-3">
-                               <img 
-                                 src={app.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=200&auto=format&fit=crop'} 
-                                 alt="Avatar" 
-                                 className="h-12 w-12 rounded-full border-2 border-slate-50 object-cover shadow-sm shrink-0" 
-                                 referrerPolicy="no-referrer"
-                               />
-                               <div className="min-w-0">
-                                  <p className="font-bold text-slate-800 text-sm truncate">
-                                     {profile.role === 'employer' 
-                                       ? (app.candidateName || resolvedNames[app.candidateId] || `Candidat ${app.candidateId.substring(0,6)}...`)
-                                       : (resolvedJobs[app.jobId] ? `Offre : ${resolvedJobs[app.jobId]}` : `Postulé pour l'offre ${app.jobId.substring(0,8)}`)}
-                                  </p>
-                                  <p className="text-[11px] text-slate-400 font-medium mt-0.5">
-                                     Postulé le : {new Date(app.createdAt).toLocaleDateString()} • État : <span className={`capitalize font-black ${app.status === 'approved' ? 'text-emerald-600' : app.status === 'rejected' ? 'text-red-500' : 'text-amber-500'}`}>{app.status === 'pending' ? 'En attente' : app.status === 'approved' ? 'Acceptée' : 'Refusée'}</span>
-                                  </p>
-                               </div>
-                            </div>
-
-                            <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
-                               {profile.role === 'employer' && app.status === 'pending' && (
-                                 <>
-                                   <button 
-                                     onClick={() => updateAppStatus(app.id, 'approved')} 
-                                     className="text-[10px] font-bold text-emerald-600 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 rounded-xl transition-all border border-emerald-100/50 uppercase tracking-wider"
-                                   >
-                                     Approuver
-                                   </button>
-                                   <button 
-                                     onClick={() => updateAppStatus(app.id, 'rejected')} 
-                                     className="text-[10px] font-bold text-red-500 px-3 py-1.5 bg-red-50 hover:bg-red-100 rounded-xl transition-all border border-red-100/50 uppercase tracking-wider"
-                                   >
-                                     Refuser
-                                   </button>
-                                 </>
-                               )}
-                               <button 
-                                 onClick={() => viewCandidate(app.candidateId, app)} 
-                                 className="text-[10px] font-bold text-slate-600 px-3 py-1.5 bg-slate-50 hover:bg-slate-100 rounded-xl transition-all border border-slate-200/50 uppercase tracking-wider"
-                                >
-                                 Voir Profil
-                               </button>
-                            </div>
-                         </div>
-
-                         {/* Extra Transmitted Candidate Form Information */}
-                         {(app.experienceYears !== undefined || app.message || app.cvName) && (
-                           <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100/40 text-xs space-y-3 font-sans">
-                             <div className="flex flex-wrap gap-2 text-[10px] font-black tracking-wider uppercase">
-                                {app.experienceYears !== undefined && (
-                                  <div className="bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-lg flex items-center gap-1 border border-emerald-100/30">
-                                     <span>💼</span> <span>{app.experienceYears} {app.experienceYears > 1 ? "ans d'expérience" : app.experienceYears === 0 ? "Débutant" : "an d'expérience"}</span>
-                                  </div>
-                                )}
-                                {app.cvName && (
-                                  <div className="bg-amber-50 text-amber-500 px-2.5 py-1 rounded-lg flex flex-wrap items-center gap-1.5 border border-amber-100/40 font-mono text-[10px]">
-                                     <span>📄</span> <span>CV: {app.cvName}</span>
-                                     {app.cvUrl && (
-                                       <div className="flex items-center gap-1.5 ml-2">
-                                         <button 
-                                           onClick={(e) => { e.stopPropagation(); setPreviewCv({ name: app.cvName!, url: app.cvUrl! }); }}
-                                           className="underline font-black text-amber-700 hover:text-amber-950 cursor-pointer"
-                                         >
-                                           [👁️ Visionner]
-                                         </button>
-                                         <a 
-                                           href={app.cvUrl} 
-                                           download={app.cvName}
-                                           className="underline font-black text-amber-700 hover:text-amber-950 cursor-pointer"
-                                           onClick={(e) => e.stopPropagation()}
-                                         >
-                                           [📥 Télécharger]
-                                         </a>
-                                       </div>
-                                     )}
-                                  </div>
-                                )}
-                             </div>
-                             {app.message && (
-                               <p className="text-slate-600 leading-relaxed text-xs pl-3 border-l-[3px] border-emerald-500/50 italic bg-white/40 py-1.5 rounded-r-xl font-sans">
-                                  "{app.message}"
-                                </p>
-                             )}
-                           </div>
-                         )}
-                       </div>
-                     ))}
-                   </div>
-                 )}
-
-                 <AnimatePresence>
-                    {false && selectedCandidate && (
-                      <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
-                         <motion.div 
-                           initial={{ scale: 0.9, opacity: 0 }}
-                           animate={{ scale: 1, opacity: 1 }}
-                           exit={{ scale: 0.9, opacity: 0 }}
-                           className="bg-white rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl"
-                         >
-                            <div className="p-8 text-center relative">
-                               <button onClick={() => { setSelectedCandidate(null); setSelectedApplication(null); }} className="absolute top-4 right-4 p-2 bg-slate-100 rounded-full hover:bg-slate-200"><X className="h-4 w-4" /></button>
-                               
-                               <img src={selectedApplication?.photoURL || selectedCandidate.photoURL || 'https://via.placeholder.com/150'} className="h-24 w-24 rounded-full mx-auto mb-4 border-4 border-slate-50 object-cover" />
-                               <h3 className="text-xl font-black text-slate-800 uppercase tracking-tight">{selectedApplication?.candidateName || selectedCandidate.displayName}</h3>
-                               <p className="text-[10px] font-black text-emerald-600 uppercase tracking-[0.2em] mb-4">{selectedCandidate.role === 'candidate' ? 'CANDIDAT DE MAISON' : selectedCandidate.role}</p>
-
-                               {/* Dynamic application detail overlays */}
-                               {selectedApplication && (
-                                 <div className="space-y-3 mb-6 font-sans">
-                                   <div className="flex flex-wrap gap-2 justify-center text-[10px] font-bold uppercase">
-                                     {selectedApplication.experienceYears !== undefined && (
-                                       <span className="bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-xl">
-                                         💼 {selectedApplication.experienceYears} {selectedApplication.experienceYears > 1 ? "ans d'expérience" : "an d'expérience"}
-                                       </span>
-                                     )}
-                                     {selectedApplication.cvName && (
-                                       <span className="bg-amber-50 text-amber-600 px-3 py-1.5 rounded-xl border border-amber-150">
-                                         📄 CV: {selectedApplication.cvName}
-                                       </span>
-                                     )}
-                                   </div>
-
-                                   {selectedApplication.message && (
-                                     <div className="bg-slate-50 text-xs italic text-slate-600 p-4 rounded-2xl border border-slate-100 text-left leading-relaxed">
-                                       <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400 not-italic mb-1">Message du candidat :</div>
-                                       "{selectedApplication.message}"
-                                     </div>
-                                   )}
-                                 </div>
-                               )}
-
-                               <div className="grid grid-cols-2 gap-4 text-left mb-8">
-                                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                                     <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Badge Confiance</p>
-                                     <div className="flex items-center gap-2">
-                                        <span className={`text-xs font-bold ${selectedCandidate.isVerified ? 'text-emerald-600' : 'text-slate-400'}`}>
-                                           {selectedCandidate.isVerified ? 'CERTIFIÉ' : 'EN ATTENTE'}
-                                        </span>
-                                        {selectedCandidate.isVerified && <CheckCircle2 className="h-3 w-3 text-emerald-500" />}
-                                     </div>
-                                  </div>
-                                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                                     <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Score</p>
-                                     <div className="flex items-center gap-2">
-                                        <Star className="h-3 w-3 text-emerald-500 fill-emerald-500" />
-                                        <span className="text-xs font-bold text-slate-800">{selectedCandidate.averageRating || 'N/A'}</span>
-                                     </div>
-                                  </div>
-                               </div>
-
-                               <div className="flex gap-3">
-                                  <a 
-                                    href={`mailto:${selectedCandidate.email}?subject=Offre d'emploi sur IvoireSource&body=Bonjour ${selectedCandidate.displayName}, je reviens vers vous concernant votre candidature sur IvoireSource.`} 
-                                    className="flex-1 bg-slate-900 text-white py-3 rounded-xl font-bold text-sm hover:bg-black transition-all text-center"
-                                  >
-                                     Contacter par Email
-                                  </a>
-                                  <button onClick={() => setSelectedCandidate(null)} className="flex-1 bg-slate-100 text-slate-600 py-3 rounded-xl font-bold text-sm hover:bg-slate-200">Fermer</button>
-                               </div>
-                            </div>
-                         </motion.div>
-                      </div>
-                    )}
-                 </AnimatePresence>
-              </div>
+           {activeTab === 'applications' && profile.role === 'candidate' && (
+              <ArtisanMissionsPanel artisanId={profile.uid} />
            )}
 
            {activeTab === 'admin' && profile.role === 'admin' && (
@@ -2168,7 +1740,7 @@ export function DashboardView({
                                                  {job.category}
                                               </span>
                                            </td>
-                                           <td className="px-6 py-4 text-xs font-bold text-emerald-600">{job.salaryRange} FCFA</td>
+                                           <td className="px-6 py-4 text-xs font-bold text-emerald-600">{job.budget ?? job.salaryRange} FCFA</td>
                                            <td className="px-6 py-4">
                                               <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider ${getJobStatusLabel(job.status).color}`}>
                                                  {getJobStatusLabel(job.status).text}
@@ -2893,157 +2465,6 @@ export function DashboardView({
                  {/* Modal Body */}
                  <div className="p-6 md:p-8 space-y-6">
 
-                    {/* VIEW PLANS TO UNLOCK */}
-                    {checkoutStep === 'plans' && (
-                      <div className="space-y-6 text-center">
-                        <div className="space-y-2">
-                          <h5 className="font-extrabold text-slate-800 text-sm">Contacter ce candidat qualifié</h5>
-                          <p className="text-xs text-slate-400">Pour accéder au numéro de téléphone direct, à son adresse email et à ses rapports de vérification CNI, veuillez sélectionner votre accès :</p>
-                        </div>
-
-                        <div className="grid grid-cols-1 gap-4 text-left">
-                          {/* One time search - 15000 FCFA */}
-                          <div 
-                            onClick={() => startPaymentCheckout('one-time')}
-                            className="bg-slate-50 hover:bg-emerald-50/45 border-2 border-slate-200 hover:border-emerald-500 rounded-2xl p-4 cursor-pointer transition-all flex justify-between items-center group relative overflow-hidden"
-                          >
-                            <div className="space-y-1">
-                              <span className="bg-emerald-100 text-emerald-800 text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider inline-block font-sans">Recherche Ponctuelle</span>
-                              <p className="font-black text-slate-850 text-xs">Le Profil Unique</p>
-                              <p className="text-[10px] text-slate-400 leading-tight">Accès direct illimité au numéro, mail et garant de ce profil uniquement.</p>
-                            </div>
-                            <div className="text-right shrink-0 ml-4 font-sans">
-                              <span className="text-xs font-black text-slate-800 block">15 000 FCFA</span>
-                              <span className="text-[8px] text-slate-400 font-bold block">Paiement unique</span>
-                            </div>
-                          </div>
-
-                          {/* Unlimited access for 1 month - 30000 FCFA */}
-                          <div 
-                            onClick={() => startPaymentCheckout('monthly')}
-                            className="bg-slate-50 hover:bg-emerald-50/45 border-2 border-emerald-100 hover:border-emerald-600 rounded-2xl p-4 cursor-pointer transition-all flex justify-between items-center group relative overflow-hidden bg-emerald-50/10"
-                          >
-                            <div className="space-y-1">
-                              <span className="bg-amber-100 text-amber-800 text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider inline-block font-sans">Best Value 🔥</span>
-                              <p className="font-black text-slate-850 text-xs">Accès Illimité 1 Mois</p>
-                              <p className="text-[10px] text-slate-400 leading-tight">Accédez à TOUS les profils d'employés et de nounous pendant 30 jours.</p>
-                            </div>
-                            <div className="text-right shrink-0 ml-4 font-sans">
-                              <span className="text-xs font-black text-emerald-600 block">30 000 FCFA</span>
-                              <span className="text-[8px] text-slate-400 font-bold block">Accès 1 mois</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <button 
-                          onClick={() => { setSelectedCandidate(null); setSelectedApplication(null); }}
-                          className="w-full bg-slate-100 hover:bg-slate-200 text-slate-600 py-3 rounded-xl font-bold text-xs uppercase transition-all"
-                        >
-                          Fermer
-                        </button>
-                      </div>
-                    )}
-
-                    {/* SELECT OPERATOR & MOBILE NUMBER */}
-                    {checkoutStep === 'payment-method' && (
-                      <form onSubmit={executeMobileMoneyPayment} className="space-y-5 text-left font-sans">
-                        <div className="space-y-1">
-                          <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Option choisie :</span>
-                          <div className="flex justify-between items-center bg-slate-50 border border-slate-100 p-3 rounded-xl text-xs">
-                            <span className="font-bold text-slate-700">
-                              {chosenPlan === 'one-time' ? "Recherche unique de ce candidat" : "Accès illimité Côte d'Ivoire (1 mois)"}
-                            </span>
-                            <span className="font-black text-emerald-600">
-                              {chosenPlan === 'one-time' ? "15 000 fr" : "30 000 fr"}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Operator selector */}
-                        <div className="space-y-2">
-                          <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider block">Mode de Paiement sécurisé (Côte d'Ivoire)</span>
-                          <div className="grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-5 gap-1.5">
-                            {[
-                              { id: 'wave', label: 'Wave 🌊' },
-                              { id: 'orange', label: 'Orange 🍊' },
-                              { id: 'mtn', label: 'MTN 🟨' },
-                              { id: 'moov', label: 'Moov 🍫' },
-                              { id: 'card', label: 'Carte 💳' }
-                            ].map(op => (
-                              <button
-                                type="button"
-                                key={op.id}
-                                onClick={() => {
-                                  setPaymentOperator(op.id as any);
-                                  if (op.id === 'card') setPhoneNumber('');
-                                }}
-                                className={`py-2.5 px-1 rounded-xl text-[10px] font-black border uppercase tracking-wider transition-all text-center flex flex-col items-center justify-center gap-1 ${paymentOperator === op.id ? 'bg-emerald-600 border-emerald-600 text-white shadow-sm' : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-600'}`}
-                              >
-                                {op.label}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Mobile Number Entry or Card prompt */}
-                        {paymentOperator !== 'card' ? (
-                          <div className="space-y-2">
-                            <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider block font-sans">Votre Numéro {paymentOperator.toUpperCase()}</label>
-                            <div className="relative">
-                              <span className="absolute left-3.5 inset-y-0 flex items-center text-xs text-slate-400 font-bold font-mono">+225</span>
-                              <input 
-                                type="tel"
-                                placeholder="07 00 00 00 00"
-                                value={phoneNumber}
-                                required
-                                onChange={(e) => setPhoneNumber(e.target.value)}
-                                className="w-full pl-16 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none focus:bg-white font-mono"
-                              />
-                            </div>
-                            <p className="text-[9px] text-slate-400">Un message USSD de validation automatique sera lancé sur votre numéro.</p>
-                          </div>
-                        ) : (
-                          <div className="space-y-2">
-                            <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider block font-sans">Coordonnées Carte Bancaire</label>
-                            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 text-xs text-slate-600 space-y-1">
-                              <p className="font-bold text-slate-700">💳 Visa, Mastercard et Cartes Locales</p>
-                              <p className="text-[10px] text-slate-500">Le formulaire de saisie de la carte hautement sécurisé sera affiché directement sur la passerelle partenaire Paiement Pro lors de la redirection.</p>
-                            </div>
-                          </div>
-                        )}
-
-                        {paymentError && <p className="text-red-500 font-bold text-[10px] bg-red-50 p-2.5 rounded-lg border border-red-100">{paymentError}</p>}
-
-                        {/* Submit checkout */}
-                        <div className="pt-2 flex gap-3">
-                          <button 
-                            type="button"
-                            onClick={() => setCheckoutStep('plans')}
-                            className="flex-1 py-3 text-xs font-bold text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-xl"
-                          >
-                            Retour
-                          </button>
-                          <button 
-                            type="submit"
-                            className="flex-1 py-3 text-xs font-bold text-white bg-slate-900 hover:bg-emerald-600 rounded-xl transition-all"
-                          >
-                            Valider et Payer
-                          </button>
-                        </div>
-                      </form>
-                    )}
-
-                    {/* PROCESSING STATE BAR */}
-                    {checkoutStep === 'processing' && (
-                      <div className="py-12 text-center space-y-6">
-                        <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto bg-transparent"></div>
-                        <div className="space-y-2">
-                          <p className="font-bold text-slate-800 text-sm">Traitement de l'opération en cours...</p>
-                          <p className="text-xs text-slate-400 animate-pulse">{paymentStatusMessage}</p>
-                        </div>
-                      </div>
-                    )}
-
                     {/* DETAILS VIEW OR SUCCESS VIEW */}
                     {(checkoutStep === 'details' || checkoutStep === 'success') && (
                       <div className="space-y-6">
@@ -3604,7 +3025,7 @@ export function DashboardView({
                         </div>
                         <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100/40">
                           <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Rémunération</p>
-                          <p className="text-xs font-semibold text-slate-700">{selectedManageJob.salaryRange} FCFA</p>
+                          <p className="text-xs font-semibold text-slate-700">{selectedManageJob.budget ?? selectedManageJob.salaryRange} FCFA</p>
                         </div>
                       </div>
 

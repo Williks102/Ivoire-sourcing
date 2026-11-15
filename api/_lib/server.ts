@@ -1,0 +1,139 @@
+import type { VercelRequest } from '@vercel/node';
+import { timingSafeEqual } from 'node:crypto';
+
+/**
+ * Helpers serveur partagés par les fonctions /api.
+ * Le dossier `_lib` n'est pas exposé comme route par Vercel.
+ *
+ * Principe : toute règle financière (montant, commission, statut payé) est
+ * calculée et écrite ICI, côté serveur, avec la clé API Appwrite. Le navigateur
+ * ne fournit jamais un montant.
+ */
+
+export const MISSION_STATUS = {
+  PENDING: 'pending', // en attente de modération
+  OPEN: 'approved', // publiée, reçoit des offres
+  ASSIGNED: 'assigned', // une offre a été acceptée
+  COMPLETED: 'completed', // terminée par l'artisan, en attente de validation + paiement client
+  PAID: 'paid', // payée par le client (fin de mission)
+  REJECTED: 'rejected',
+  CLOSED: 'closed',
+} as const;
+
+export class HttpError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+  }
+}
+
+function config() {
+  const endpoint = process.env.APPWRITE_ENDPOINT;
+  const project = process.env.APPWRITE_PROJECT_ID;
+  const database = process.env.APPWRITE_DATABASE_ID;
+  const key = process.env.APPWRITE_API_KEY;
+  if (!endpoint || !project || !database || !key) {
+    throw new HttpError(500, 'Configuration Appwrite serveur incomplète.');
+  }
+  return { endpoint, project, database, key };
+}
+
+async function appwrite(method: string, path: string, body?: unknown, extraHeaders: Record<string, string> = {}) {
+  const { endpoint, project, key } = config();
+  const response = await fetch(`${endpoint}${path}`, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Appwrite-Project': project,
+      'X-Appwrite-Key': key,
+      ...extraHeaders,
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    if (response.status === 404) throw new HttpError(404, 'Document introuvable.');
+    throw new HttpError(502, `Appwrite ${method} ${path} -> ${response.status}: ${text}`);
+  }
+  return response.json();
+}
+
+export const db = {
+  async get(collection: string, id: string) {
+    const { database } = config();
+    return appwrite('GET', `/databases/${database}/collections/${collection}/documents/${encodeURIComponent(id)}`);
+  },
+  async update(collection: string, id: string, data: Record<string, unknown>) {
+    const { database } = config();
+    return appwrite('PATCH', `/databases/${database}/collections/${collection}/documents/${encodeURIComponent(id)}`, { data });
+  },
+  /** `id` peut valoir 'unique()' pour laisser Appwrite générer l'identifiant. `permissions` : ex. ['read("user:abc")']. */
+  async create(collection: string, id: string, data: Record<string, unknown>, permissions: string[] = []) {
+    const { database } = config();
+    return appwrite('POST', `/databases/${database}/collections/${collection}/documents`, { documentId: id, data, permissions });
+  },
+  async listEqual(collection: string, attribute: string, value: string) {
+    const { database } = config();
+    const q = encodeURIComponent(JSON.stringify({ method: 'equal', attribute, values: [value] }));
+    const limit = encodeURIComponent(JSON.stringify({ method: 'limit', values: [100] }));
+    const result = await appwrite('GET', `/databases/${database}/collections/${collection}/documents?queries[]=${q}&queries[]=${limit}`);
+    return result.documents as any[];
+  },
+};
+
+/**
+ * Identifie l'appelant. Le navigateur envoie un JWT Appwrite
+ * (Authorization: Bearer <jwt>) ; on le vérifie auprès d'Appwrite.
+ */
+export async function authenticate(req: VercelRequest): Promise<{ $id: string; name: string; email: string; phone?: string; labels: string[] }> {
+  const header = req.headers.authorization || '';
+  const jwt = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+  if (!jwt) throw new HttpError(401, 'Authentification requise.');
+
+  const { endpoint, project } = config();
+  const response = await fetch(`${endpoint}/account`, {
+    headers: { 'X-Appwrite-Project': project, 'X-Appwrite-JWT': jwt },
+  });
+  if (!response.ok) throw new HttpError(401, 'Session invalide ou expirée.');
+  const user = await response.json();
+  return { $id: user.$id, name: user.name || '', email: user.email || '', phone: user.phone || undefined, labels: user.labels || [] };
+}
+
+/** Comparaison à temps constant pour les secrets. */
+export function safeEqual(a: unknown, b: unknown): boolean {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  return bufA.length === bufB.length && timingSafeEqual(bufA, bufB);
+}
+
+/** Taux de commission de la plateforme (0.12 = 12 %), borné à [0 ; 0.5]. */
+export function commissionRate(): number {
+  const raw = Number(process.env.COMMISSION_RATE ?? '0.12');
+  if (!Number.isFinite(raw)) return 0.12;
+  return Math.min(Math.max(raw, 0), 0.5);
+}
+
+/** Répartition d'un prix convenu : la commission est prélevée sur le total payé par le client. */
+export function splitPrice(total: number) {
+  const amount = Math.round(total);
+  const commission = Math.round(amount * commissionRate());
+  return { amount, commission, payout: amount - commission };
+}
+
+export function readBody(req: VercelRequest): Record<string, any> {
+  const body = req.body;
+  if (typeof body === 'string') {
+    try { return JSON.parse(body); } catch { return {}; }
+  }
+  return body && typeof body === 'object' ? body : {};
+}
+
+/** Retire le HTML et les caractères de gabarit, puis borne la longueur. */
+export function sanitizeText(input: unknown, maxLength = 5000): string {
+  if (typeof input !== 'string') return '';
+  return input
+    .replace(/<\/?[^>]+(>|$)/g, '')
+    .substring(0, maxLength)
+    .replace(/[`${}]/g, '')
+    .trim();
+}
