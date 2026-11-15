@@ -32,6 +32,8 @@ import { UserProfile, JobPost, Application, UserRole } from '../types';
 import { CITIES, CATEGORIES, MISSION_STATUS_LABELS, formatFcfa } from '../constants';
 import { ClientMissionsPanel, ArtisanMissionsPanel } from './MissionsPanel';
 import { ArtisanProfileFields } from './ArtisanProfileFields';
+import { OutreachModal } from './OutreachModal';
+import { toWhatsAppNumber } from '../lib/phone';
 
 enum OperationType {
   CREATE = 'create',
@@ -142,6 +144,8 @@ export function DashboardView({
   const [editTrades, setEditTrades] = useState<string[]>(profile?.trades || []);
   const [editExperience, setEditExperience] = useState<number>(profile?.experienceYears || 0);
   const [editServiceCities, setEditServiceCities] = useState<string[]>(profile?.serviceCities || []);
+  const [editWhatsapp, setEditWhatsapp] = useState<boolean>(profile?.whatsappConsent === true);
+  const [outreachJob, setOutreachJob] = useState<JobPost | null>(null);
   const [editPhone, setEditPhone] = useState(profile?.phone || '');
   const [profileCvFile, setProfileCvFile] = useState<{ name: string; content?: string } | null>(
     profile?.cvName ? { name: profile.cvName, content: profile.cvUrl } : null
@@ -379,6 +383,11 @@ export function DashboardView({
         showNotification('Choisissez au moins un métier pour compléter votre profil artisan.', 'error');
         return;
       }
+      if (profile.role === 'candidate' && editWhatsapp && !toWhatsAppNumber(editPhone)) {
+        setUpdatingProfile(false);
+        showNotification("Pour recevoir les missions par WhatsApp, saisissez un numéro valide (ex : 07 48 92 11 02 ou +225 07 48 92 11 02).", 'error');
+        return;
+      }
       const updated: UserProfile = {
         ...profile,
         displayName: editName,
@@ -386,7 +395,14 @@ export function DashboardView({
         location: editLocation,
         phone: editPhone,
         ...(profile.role === 'candidate'
-          ? { skills: editSkills, trades: editTrades, experienceYears: editExperience, serviceCities: editServiceCities }
+          ? {
+              skills: editSkills,
+              trades: editTrades,
+              experienceYears: editExperience,
+              serviceCities: editServiceCities,
+              whatsappConsent: editWhatsapp,
+              whatsappConsentAt: editWhatsapp ? (profile.whatsappConsent ? profile.whatsappConsentAt : new Date().toISOString()) : undefined,
+            }
           : {}),
       };
       const isDemoMode = import.meta.env.DEV && (profile.uid?.startsWith('demo-') ?? false);
@@ -1135,6 +1151,7 @@ export function DashboardView({
   const jobTitle = (id: string) => myJobs.find(j => j.id === id)?.title || resolvedJobs[id] || `Mission ${id.slice(0, 6)}`;
   const pendingMissions = myJobs.filter(j => j.status === 'pending');
   const unpaidMissions = myJobs.filter(j => j.status === 'completed');
+  const openWithoutOffers = myJobs.filter(j => j.status === 'approved' && !apps.some(a => a.jobId === j.id));
   const payoutsToDo = myJobs.filter(j => j.status === 'paid' && j.payoutStatus !== 'sent');
   const pendingCertifs = allUsers.filter(u => (u.verificationDocs || []).some(d => d.status === 'pending'));
   const adminTodoCount = pendingMissions.length + payoutsToDo.length + pendingCertifs.length;
@@ -1474,11 +1491,30 @@ export function DashboardView({
                                   <p className="font-bold text-slate-800 text-sm truncate">{job.title}</p>
                                   <p className="text-[11px] text-slate-400">{categoryName(job.category)} • {job.location} • {formatFcfa(job.budget)} • par {userName(job.employerId)}</p>
                                   {job.description && <p className="text-xs text-slate-500 mt-1 line-clamp-2">{job.description}</p>}
+                                  {(job.aiSummary || job.aiMissing?.length || (job.aiCategory && job.aiCategory !== job.category)) && (
+                                    <p className="text-[11px] text-violet-700 mt-1">
+                                      ✨ {job.aiSummary}
+                                      {job.aiCategory && job.aiCategory !== job.category ? ` — L'IA suggère le métier « ${categoryName(job.aiCategory)} »` : ''}
+                                      {job.aiMissing?.length ? ` — À préciser : ${job.aiMissing.join(' • ')}` : ''}
+                                    </p>
+                                  )}
                                </div>
                                <div className="flex gap-2 shrink-0">
                                   <button onClick={() => updateJobStatus(job.id, 'approved')} className="px-3 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider bg-emerald-600 text-white hover:bg-emerald-700">Valider</button>
                                   <button onClick={() => updateJobStatus(job.id, 'rejected')} className="px-3 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider bg-red-50 text-red-600 hover:bg-red-100 border border-red-100">Refuser</button>
                                </div>
+                            </div>
+                          ))}
+                       </TodoSection>
+
+                       <TodoSection title="Missions ouvertes sans offre : à diffuser aux artisans" count={openWithoutOffers.length} empty="Toutes les missions ouvertes ont déjà reçu des offres." info>
+                          {openWithoutOffers.map(job => (
+                            <div key={job.id} className="p-4 flex items-center justify-between gap-3">
+                               <div className="min-w-0">
+                                  <p className="font-bold text-slate-800 text-sm truncate">{job.title}</p>
+                                  <p className="text-[11px] text-slate-400">{categoryName(job.category)} • {job.location} • {formatFcfa(job.budget)} • publiée le {new Date(job.createdAt).toLocaleDateString('fr-FR')}</p>
+                               </div>
+                               <button onClick={() => setOutreachJob(job)} className="px-3 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider bg-emerald-600 text-white hover:bg-emerald-700 shrink-0">Diffuser</button>
                             </div>
                           ))}
                        </TodoSection>
@@ -2006,6 +2042,9 @@ export function DashboardView({
                                                   <button onClick={() => updateJobStatus(job.id, 'rejected')} className="px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider bg-red-50 text-red-600 hover:bg-red-100 transition-all border border-red-100">Refuser</button>
                                                 )}
                                                 {job.status === 'approved' && (
+                                                  <button onClick={() => setOutreachJob(job)} className="px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider bg-emerald-600 text-white hover:bg-emerald-700 transition-all">Trouver des artisans</button>
+                                                )}
+                                                {job.status === 'approved' && (
                                                   <button onClick={() => updateJobStatus(job.id, 'closed')} className="px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-600 hover:bg-slate-200 transition-all">Clôturer</button>
                                                 )}
                                                 {locked ? (
@@ -2214,6 +2253,7 @@ export function DashboardView({
                                   skills={editSkills} setSkills={setEditSkills}
                                   experience={editExperience} setExperience={setEditExperience}
                                   serviceCities={editServiceCities} setServiceCities={setEditServiceCities}
+                                  whatsappConsent={editWhatsapp} setWhatsappConsent={setEditWhatsapp}
                                 />
                              )}
 
@@ -3234,6 +3274,7 @@ export function DashboardView({
            </div>
          )}
       </AnimatePresence>
+      {outreachJob && <OutreachModal mission={outreachJob} onClose={() => setOutreachJob(null)} />}
     </div>
   );
 }

@@ -16,7 +16,7 @@ serveur : **seul le serveur** écrit `agreedPrice`, `assignedArtisanId`, `paid*`
 ### `users` (id du document = id du compte Appwrite)
 `uid` string · `role` string (`candidate` = artisan, `employer` = client) · `displayName` string · `email` string ·
 `photoURL` string · `location` string · `bio` string · `skills` string[] · `isVerified` bool · `isPremium` bool ·
-`averageRating` float · `reviewCount` int · `trades` string[] (métiers de l'artisan : plomberie, electricite, …) · `serviceCities` string[] · `experienceYears` int · `phone` string · `cvName` string · `cvUrl` string · `createdAt` string ·
+`averageRating` float · `reviewCount` int · `trades` string[] (métiers de l'artisan : plomberie, electricite, …) · `serviceCities` string[] · `experienceYears` int · `whatsappConsent` bool · `whatsappConsentAt` string · `phone` string · `cvName` string · `cvUrl` string · `createdAt` string ·
 `verificationDocs` string (JSON ; à terme, stocker les fichiers dans Storage plutôt qu'en base64)
 
 ### `jobs` (= missions)
@@ -24,7 +24,7 @@ serveur : **seul le serveur** écrit `agreedPrice`, `assignedArtisanId`, `paid*`
 `scheduledDate` string · `budget` int (FCFA) · `status` string · `createdAt` string ·
 *(écrits par le serveur)* `assignedArtisanId` string · `assignedApplicationId` string · `agreedPrice` int · `assignedAt` string ·
 `completedAt` string · `paidAt` string · `paymentReference` string · `commissionAmount` int · `artisanPayout` int ·
-`payoutStatus` string (`pending` | `sent`) · `payoutSentAt` string · `payoutReference` string
+`payoutStatus` string (`pending` | `sent`) · `payoutSentAt` string · `payoutReference` string · `aiSummary` string · `aiTags` string[] · `aiMissing` string[] · `aiCategory` string
 
 Index conseillés : `employerId`, `assignedArtisanId`, `status`.
 
@@ -34,6 +34,10 @@ Index conseillés : `employerId`, `assignedArtisanId`, `status`.
 (`pending` | `accepted` | `rejected`) · `createdAt` string
 
 Index conseillés : `jobId`, `candidateId`.
+
+### `outreach` (journal des diffusions, **serveur uniquement**)
+`missionId` string · `artisanId` string · `channel` string (`whatsapp`) · `adminId` string · `createdAt` string.
+Aucune permission côté navigateur : lu et écrit par `/api/admin/outreach`.
 
 ### `payments` (nouvelle, **à créer**)
 Id du document = référence de paiement. `reference` string · `jobId` string · `employerId` string · `artisanId` string ·
@@ -82,6 +86,23 @@ l'encaissé, les commissions et les reversements. « Reversement effectué » pa
 
 Garde-fous : une mission en cours, terminée ou payée ne peut plus être validée, refusée, clôturée ni supprimée depuis
 l'admin, et une offre retenue ne peut pas être supprimée.
+
+## Diffusion aux artisans (WhatsApp) et IA
+
+Sur une mission **ouverte**, l'admin ouvre « Trouver des artisans » (onglet Missions) ou « Diffuser » (onglet À traiter).
+`/api/admin/outreach` (label `admin` vérifié) calcule les artisans concernés : même **métier**, **ville** couverte
+(zones d'intervention, sinon ville du profil), **consentement WhatsApp** coché, **numéro valide** (ivoirien à 10 chiffres,
+ou international avec « + »). Classement : jamais contactés, certifiés, mieux notés, plus expérimentés. Les profils
+pertinents écartés faute de consentement ou de numéro sont comptés, pas listés.
+
+L'envoi est **manuel** : chaque bouton ouvre `wa.me` avec le message prérempli, depuis le WhatsApp de l'admin. Le contact est
+journalisé dans `outreach`. Le message est un modèle fixe ; si `GEMINI_API_KEY` est configurée, « Améliorer avec l'IA » en
+propose une version. La version IA n'est retenue que si elle contient notre lien et `{prenom}` et aucun autre lien ni numéro.
+
+IA (Gemini, côté serveur uniquement) : (1) à la publication, **un seul appel** modère la mission et l'analyse (résumé,
+spécialités, informations manquantes, métier suggéré) ; (2) brouillon du message WhatsApp. Aucune donnée personnelle
+(nom, téléphone, e-mail) n'est envoyée à l'IA ; les textes saisis par les utilisateurs sont traités comme des données.
+Sans clé ou en cas de panne : modération manuelle et message fixe. Variables : `GEMINI_API_KEY`, `GEMINI_MODEL` (facultatif).
 
 ## Administrateur
 

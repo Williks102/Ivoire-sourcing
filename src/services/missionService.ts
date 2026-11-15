@@ -5,6 +5,21 @@ import { Application, JobPost } from '../types';
 
 const DB = APPWRITE_CONFIG.DATABASE_ID;
 
+export interface OutreachCandidate {
+  id: string;
+  name: string;
+  firstName: string;
+  trades: string[];
+  specialties: string[];
+  rating: number;
+  reviewCount: number;
+  isVerified: boolean;
+  experienceYears: number;
+  whatsapp: string;
+  zoneUnknown: boolean;
+  contactedAt: string | null;
+}
+
 export interface AdminPayment {
   id: string;
   reference: string;
@@ -74,7 +89,11 @@ export const missionService = {
     address?: string;
     scheduledDate?: string;
     budget: number;
-  }) => authFetch<{ id: string; status: 'approved' | 'pending' }>('/api/missions/create', input),
+  }) =>
+    authFetch<{ id: string; status: 'approved' | 'pending'; hints?: { missing: string[]; suggestedCategory: string | null } }>(
+      '/api/missions/create',
+      input,
+    ),
 
   /** Envoie une offre (devis) sur une mission, via le serveur. */
   submitOffer: (input: {
@@ -99,6 +118,17 @@ export const missionService = {
     authFetch<{ payments: AdminPayment[]; total: number }>('/api/admin/payments', { action: 'list', offset }),
   adminMarkPayoutSent: (missionId: string, reference?: string) =>
     authFetch('/api/admin/payments', { action: 'markPayoutSent', missionId, reference }),
+
+  // --- Diffusion d'une mission aux artisans concernés (admin) ---
+  adminOutreachCandidates: (missionId: string) =>
+    authFetch<{ candidates: OutreachCandidate[]; excluded: { noConsent: number; noPhone: number }; aiAvailable: boolean }>('/api/admin/outreach', {
+      action: 'candidates',
+      missionId,
+    }),
+  adminOutreachDraft: (missionId: string, useAi: boolean) =>
+    authFetch<{ message: string; source: 'ai' | 'template' }>('/api/admin/outreach', { action: 'draftMessage', missionId, useAi }),
+  adminOutreachMark: (missionId: string, artisanId: string) =>
+    authFetch('/api/admin/outreach', { action: 'markContacted', missionId, artisanId }),
 
   // --- Transitions contrôlées par le serveur ---
   acceptOffer: (missionId: string, applicationId: string) =>

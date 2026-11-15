@@ -81,12 +81,23 @@ export const db = {
     const result = await appwrite('GET', `/tablesdb/${database}/tables/${collection}/rows?queries[]=${order}&queries[]=${lim}&queries[]=${off}`);
     return { rows: result.rows as any[], total: result.total as number };
   },
-  async listEqual(collection: string, attribute: string, value: string) {
+  async listEqual(collection: string, attribute: string, value: string, offset = 0) {
     const { database } = config();
     const q = encodeURIComponent(JSON.stringify({ method: 'equal', attribute, values: [value] }));
     const limit = encodeURIComponent(JSON.stringify({ method: 'limit', values: [100] }));
-    const result = await appwrite('GET', `/tablesdb/${database}/tables/${collection}/rows?queries[]=${q}&queries[]=${limit}`);
+    const off = encodeURIComponent(JSON.stringify({ method: 'offset', values: [offset] }));
+    const result = await appwrite('GET', `/tablesdb/${database}/tables/${collection}/rows?queries[]=${q}&queries[]=${limit}&queries[]=${off}`);
     return result.rows as any[];
+  },
+  /** Parcourt les pages de 100 (jusqu'à `maxPages`) : pour les listes qui peuvent dépasser 100 lignes. */
+  async listAllEqual(collection: string, attribute: string, value: string, maxPages = 10) {
+    const all: any[] = [];
+    for (let page = 0; page < maxPages; page++) {
+      const rows = await this.listEqual(collection, attribute, value, page * 100);
+      all.push(...rows);
+      if (rows.length < 100) break;
+    }
+    return all;
   },
 };
 

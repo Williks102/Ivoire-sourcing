@@ -87,6 +87,8 @@ const COLLECTIONS: CollectionDef[] = [
       s('phone', 30), s('cvName', 255), s('cvUrl', 500000), s('createdAt', 40),
       // Profil artisan :
       s('trades', 40, true), s('serviceCities', 60, true), i('experienceYears'),
+      // Consentement à être contacté par WhatsApp pour des missions :
+      b('whatsappConsent'), s('whatsappConsentAt', 40),
       // Liste de pièces au format JSON. À terme : stocker les fichiers dans Storage plutôt qu'en base64.
       s('verificationDocs', 2000000),
     ],
@@ -105,6 +107,8 @@ const COLLECTIONS: CollectionDef[] = [
       s('assignedArtisanId', 64), s('assignedApplicationId', 64), i('agreedPrice'), s('assignedAt', 40), s('completedAt', 40),
       s('paidAt', 40), s('paymentReference', 64), i('commissionAmount'), i('artisanPayout'), s('payoutStatus', 20),
       s('payoutSentAt', 40), s('payoutReference', 64),
+      // Analyse IA à la publication :
+      s('aiSummary', 200), s('aiTags', 40, true), s('aiMissing', 120, true), s('aiCategory', 40),
       // Anciennes annonces de recrutement / création admin :
       s('salaryRange', 60), b('isPremium'),
     ],
@@ -131,6 +135,14 @@ const COLLECTIONS: CollectionDef[] = [
       { key: 'idx_candidate', attributes: ['candidateId'] },
       { key: 'idx_employer', attributes: ['employerId'] },
     ],
+  },
+  {
+    id: 'outreach',
+    name: 'Diffusions',
+    permissions: [], // serveur uniquement : journal des artisans contactés par l'administration
+    documentSecurity: false,
+    attributes: [s('missionId', 64), s('artisanId', 64), s('channel', 20), s('adminId', 64), s('createdAt', 40)],
+    indexes: [{ key: 'idx_mission', attributes: ['missionId'] }, { key: 'idx_artisan', attributes: ['artisanId'] }],
   },
   {
     id: 'payments',
