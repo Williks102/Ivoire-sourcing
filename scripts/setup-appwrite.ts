@@ -89,6 +89,8 @@ const COLLECTIONS: CollectionDef[] = [
       s('trades', 40, true), s('serviceCities', 60, true), i('experienceYears'),
       // Consentement à être contacté par WhatsApp pour des missions :
       b('whatsappConsent'), s('whatsappConsentAt', 40),
+      // Informations d'entreprise facultatives, reprises sur les devis et reçus :
+      s('businessName', 120), s('businessRegistration', 60),
       // Liste de pièces au format JSON. À terme : stocker les fichiers dans Storage plutôt qu'en base64.
       s('verificationDocs', 2000000),
     ],
@@ -131,6 +133,9 @@ const COLLECTIONS: CollectionDef[] = [
       s('trades', 40, true),
       // Négociation du prix (voir api/_lib/negotiation.ts) :
       s('lastProposedBy', 10), i('rounds'), s('history', 4000),
+      // Devis détaillé facultatif (JSON : lignes, remise, validité, conditions) :
+      // Taille > 16 381 : stocké en texte long, qui compte à peine dans la limite de largeur d'une ligne Appwrite.
+      s('quote', 20000),
     ],
     indexes: [
       { key: 'idx_job', attributes: ['jobId'] },

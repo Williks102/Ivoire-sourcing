@@ -4,6 +4,8 @@ import { Application, JobPost } from '../types';
 import { CATEGORIES, COMMISSION_RATE, MISSION_STATUS_LABELS, formatFcfa } from '../constants';
 import { missionService } from '../services/missionService';
 import { NegotiationBlock } from './NegotiationBlock';
+import { QuoteSummary } from './QuoteSummary';
+import { PdfButton } from './PdfButton';
 import { currentPrice } from '../lib/negotiation';
 
 const OPERATORS = [
@@ -169,6 +171,7 @@ function ClientMissionCard({ mission, onChanged }: { mission: JobPost; onChanged
                       <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5"><Clock className="h-3 w-3" /> {o.delay || 'Délai non précisé'}</p>
                       {o.message && <p className="text-xs italic text-slate-500 mt-1">« {o.message} »</p>}
                     </div>
+                    <QuoteSummary offer={o} />
                     <NegotiationBlock offer={o} viewer="client" budget={mission.budget} onChanged={reloadOffers} />
                   </div>
                 ))}
@@ -206,7 +209,10 @@ function ClientMissionCard({ mission, onChanged }: { mission: JobPost; onChanged
           )}
 
           {mission.status === 'paid' && (
-            <p className="text-xs text-emerald-700 flex items-center gap-2"><ShieldCheck className="h-4 w-4" /> Payée le {mission.paidAt ? new Date(mission.paidAt).toLocaleDateString('fr-FR') : ''} — {formatFcfa(total)}. Merci !</p>
+            <div className="space-y-2">
+              <p className="text-xs text-emerald-700 flex items-center gap-2"><ShieldCheck className="h-4 w-4" /> Payée le {mission.paidAt ? new Date(mission.paidAt).toLocaleDateString('fr-FR') : ''} — {formatFcfa(total)}. Merci !</p>
+              <PdfButton label="Reçu (PDF)" load={() => missionService.receiptPdf(mission.id)} />
+            </div>
           )}
 
           {error && <p className="text-xs font-bold text-rose-600">{error}</p>}
@@ -310,6 +316,9 @@ export function ArtisanMissionsPanel({ artisanId }: { artisanId: string }) {
                     <p className="text-[10px] text-emerald-700">Reversement : {m.payoutStatus === 'sent' ? 'effectué' : 'en cours de traitement'}</p>
                   </div>
                 )}
+                {m.status === 'paid' && (
+                  <PdfButton label="Reçu (PDF)" load={() => missionService.receiptPdf(m.id)} />
+                )}
               </div>
             ))}
           </section>
@@ -331,6 +340,7 @@ export function ArtisanMissionsPanel({ artisanId }: { artisanId: string }) {
                   )}
                 </div>
                 {o.status === 'pending' && <NegotiationBlock offer={o} viewer="artisan" budget={budgets[o.jobId]} onChanged={load} />}
+                <QuoteSummary offer={o} />
               </div>
             ))}
             {pendingOffers.length > 0 && <p className="text-[10px] text-slate-400">{pendingOffers.length} offre(s) en discussion.</p>}
