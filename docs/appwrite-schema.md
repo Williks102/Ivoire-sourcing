@@ -30,8 +30,8 @@ Index conseillés : `employerId`, `assignedArtisanId`, `status`.
 
 ### `applications` (= offres / devis)
 `jobId` string · `employerId` string · `candidateId` string · `candidateName` string · `photoURL` string ·
-`experienceYears` int · `trades` string[] (copiés du profil par le serveur) · `proposedPrice` int (FCFA) · `delay` string · `message` string · `status` string
-(`pending` | `accepted` | `rejected`) · `createdAt` string
+`experienceYears` int · `trades` string[] (copiés du profil par le serveur) · `proposedPrice` int (FCFA, **prix en cours de négociation**) · `lastProposedBy` string (`artisan` | `client`) · `rounds` int · `history` string (JSON) · `delay` string · `message` string · `status` string
+(`pending` = en discussion | `accepted` | `rejected` = refusée par le client | `withdrawn` = retirée par l'artisan) · `createdAt` string
 
 Index conseillés : `jobId`, `candidateId`.
 
@@ -86,6 +86,23 @@ l'encaissé, les commissions et les reversements. « Reversement effectué » pa
 
 Garde-fous : une mission en cours, terminée ou payée ne peut plus être validée, refusée, clôturée ni supprimée depuis
 l'admin, et une offre retenue ne peut pas être supprimée.
+
+## Négociation du prix (façon inDrive)
+
+L'artisan propose un prix ; le client peut **accepter**, **refuser** ou **contre-proposer** ; l'artisan peut alors **accepter**,
+**contre-proposer** ou **se retirer** ; et ainsi de suite, à tour de rôle, jusqu'à ce que l'un accepte le dernier prix de l'autre.
+La mission est alors attribuée **au prix négocié** (`agreedPrice`), les autres offres sont refusées, et le paiement de fin de
+mission / la commission se calculent sur ce prix.
+
+Règles (vérifiées par `/api/missions/negotiate`, pas par le navigateur) : seules les deux parties concernées ; on ne répond que
+**quand c'est son tour** ; on n'accepte que le **dernier prix de l'autre** ; une contre-offre du client est **inférieure** au prix
+demandé et celle de l'artisan **supérieure** à celle du client ; prix entier entre 500 et 10 000 000 FCFA ; **8 propositions au
+maximum** (offre initiale comprise), ensuite il ne reste qu'à accepter ou refuser ; le prix affiché à l'écran est renvoyé avec la
+réponse (`expectedPrice`) : si l'autre partie vient de le modifier, l'action est refusée. Chaque échange (qui, prix, heure, message
+de 200 caractères max) est conservé dans `history`. Les offres créées avant cette fonction sont lues comme une proposition de
+l'artisan, sans historique.
+
+Notifications en temps réel : l'autre partie est prévenue à chaque proposition, à l'acceptation, au refus ou au retrait.
 
 ## Diffusion aux artisans (WhatsApp) et IA
 

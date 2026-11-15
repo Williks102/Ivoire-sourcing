@@ -113,6 +113,7 @@ export function OfferFormModal({ job, profile, onClose, onSubmit }: OfferFormMod
               <div className="flex justify-between"><span>Commission IvoireSource ({Math.round(COMMISSION_RATE * 100)} %)</span><b>− {formatFcfa(commission)}</b></div>
               <div className="flex justify-between border-t border-emerald-200 pt-1 mt-1"><span>Vous recevez</span><b>{formatFcfa(priceNumber - commission)}</b></div>
               <p className="text-[10px] text-emerald-700 pt-1">Le client paie uniquement une fois la mission terminée.</p>
+              <p className="text-[10px] text-emerald-700">Le client peut accepter votre prix ou vous répondre avec un autre : vous pourrez alors accepter, contre-proposer ou vous retirer.</p>
             </div>
           )}
 

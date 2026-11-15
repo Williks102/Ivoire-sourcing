@@ -1160,7 +1160,9 @@ export function DashboardView({
       ? { text: 'Retenue', color: 'bg-emerald-50 text-emerald-600' }
       : status === 'rejected'
         ? { text: 'Non retenue', color: 'bg-rose-50 text-rose-600' }
-        : { text: 'En attente', color: 'bg-amber-50 text-amber-600' };
+        : status === 'withdrawn'
+          ? { text: 'Retirée', color: 'bg-slate-100 text-slate-500' }
+          : { text: 'En discussion', color: 'bg-amber-50 text-amber-600' };
   const paidTotals = {
     collected: payments.filter(p => p.status === 'success').reduce((n, p) => n + (p.amount || 0), 0),
     commissions: payments.filter(p => p.status === 'success').reduce((n, p) => n + (p.commission || 0), 0),
@@ -2104,7 +2106,7 @@ export function DashboardView({
                                            </td>
                                            <td className="px-6 py-4 text-xs">
                                               <p className="font-black text-emerald-700">{app.proposedPrice ? formatFcfa(app.proposedPrice) : '—'}</p>
-                                              <p className="text-[10px] text-slate-400">{app.delay || 'Délai non précisé'}</p>
+                                              <p className="text-[10px] text-slate-400">{app.delay || 'Délai non précisé'}{(app.rounds || 0) > 1 ? ` • ${app.rounds} propositions (dernier prix : ${app.lastProposedBy === 'client' ? 'client' : 'artisan'})` : ''}</p>
                                            </td>
                                            <td className="px-6 py-4 text-xs max-w-xs truncate text-slate-500 font-medium">{app.message || '(Aucun message)'}</td>
                                            <td className="px-6 py-4">

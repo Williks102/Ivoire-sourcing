@@ -131,8 +131,13 @@ export const missionService = {
     authFetch('/api/admin/outreach', { action: 'markContacted', missionId, artisanId }),
 
   // --- Transitions contrôlées par le serveur ---
-  acceptOffer: (missionId: string, applicationId: string) =>
-    authFetch('/api/missions/transition', { action: 'accept', missionId, applicationId }),
+  /** Accepter le dernier prix de l'autre partie (le prix affiché protège contre un changement de dernière minute). */
+  acceptPrice: (applicationId: string, expectedPrice: number) =>
+    authFetch('/api/missions/negotiate', { action: 'accept', applicationId, expectedPrice }),
+  counterOffer: (applicationId: string, price: number, note: string | undefined, expectedPrice: number) =>
+    authFetch('/api/missions/negotiate', { action: 'counter', applicationId, price, note: note || undefined, expectedPrice }),
+  /** Client : refuser l'offre. Artisan : retirer son offre. */
+  declineOffer: (applicationId: string) => authFetch('/api/missions/negotiate', { action: 'decline', applicationId }),
 
   markCompleted: (missionId: string) => authFetch('/api/missions/transition', { action: 'complete', missionId }),
 

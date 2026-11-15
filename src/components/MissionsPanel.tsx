@@ -3,6 +3,8 @@ import { PlusCircle, ChevronDown, ChevronUp, CheckCircle2, Clock, Wallet, Shield
 import { Application, JobPost } from '../types';
 import { CATEGORIES, COMMISSION_RATE, MISSION_STATUS_LABELS, formatFcfa } from '../constants';
 import { missionService } from '../services/missionService';
+import { NegotiationBlock } from './NegotiationBlock';
+import { currentPrice } from '../lib/negotiation';
 
 const OPERATORS = [
   { code: 'WAVECI', label: 'Wave' },
@@ -41,6 +43,12 @@ export function ClientMissionsPanel({ clientId, onPublish }: { clientId: string;
   }, [clientId]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    const refresh = () => { load(); };
+    window.addEventListener('ivoire:refresh', refresh);
+    return () => window.removeEventListener('ivoire:refresh', refresh);
+  }, [load]);
 
   // Retour de la passerelle de paiement : on recharge pour afficher l'état à jour.
   useEffect(() => {
@@ -87,10 +95,27 @@ function ClientMissionCard({ mission, onChanged }: { mission: JobPost; onChanged
   const [channel, setChannel] = useState('WAVECI');
   const [phone, setPhone] = useState('');
 
+  const reloadOffers = async () => {
+    try {
+      setOffers(await missionService.listOffers(mission.id));
+      setError('');
+    } catch {
+      setError('Offres indisponibles.');
+    }
+    await onChanged(); // une acceptation change l'état de la mission
+  };
+
   useEffect(() => {
     if (open && mission.status === 'approved') {
       missionService.listOffers(mission.id).then(setOffers).catch(() => setError('Offres indisponibles.'));
     }
+  }, [open, mission.id, mission.status]);
+
+  useEffect(() => {
+    if (!(open && mission.status === 'approved')) return;
+    const refresh = () => { missionService.listOffers(mission.id).then(setOffers).catch(() => {}); };
+    window.addEventListener('ivoire:refresh', refresh);
+    return () => window.removeEventListener('ivoire:refresh', refresh);
   }, [open, mission.id, mission.status]);
 
   const run = async (fn: () => Promise<any>) => {
@@ -133,7 +158,7 @@ function ClientMissionCard({ mission, onChanged }: { mission: JobPost; onChanged
             ) : (
               <div className="space-y-2">
                 {offers.filter(o => o.status === 'pending').map(o => (
-                  <div key={o.id} className="bg-white border border-slate-100 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div key={o.id} className="bg-white border border-slate-100 rounded-xl p-4 space-y-3">
                     <div className="min-w-0">
                       <p className="font-bold text-sm text-slate-800">{o.candidateName || 'Artisan'} <span className="text-slate-400 font-medium text-xs">• {o.experienceYears ?? 0} an(s) d'expérience</span></p>
                       {!!o.trades?.length && (
@@ -144,13 +169,7 @@ function ClientMissionCard({ mission, onChanged }: { mission: JobPost; onChanged
                       <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5"><Clock className="h-3 w-3" /> {o.delay || 'Délai non précisé'}</p>
                       {o.message && <p className="text-xs italic text-slate-500 mt-1">« {o.message} »</p>}
                     </div>
-                    <div className="flex items-center gap-3 shrink-0">
-                      <span className="font-black text-emerald-600">{formatFcfa(o.proposedPrice)}</span>
-                      <button disabled={busy} onClick={() => run(() => missionService.acceptOffer(mission.id, o.id))}
-                        className="text-[10px] font-bold text-white px-3 py-2 bg-slate-900 hover:bg-emerald-600 rounded-xl uppercase tracking-wider disabled:opacity-50">
-                        Choisir
-                      </button>
-                    </div>
+                    <NegotiationBlock offer={o} viewer="client" budget={mission.budget} onChanged={reloadOffers} />
                   </div>
                 ))}
               </div>
@@ -205,6 +224,7 @@ export function ArtisanMissionsPanel({ artisanId }: { artisanId: string }) {
   const [offers, setOffers] = useState<Application[]>([]);
   const [missions, setMissions] = useState<JobPost[]>([]);
   const [titles, setTitles] = useState<Record<string, string>>({});
+  const [budgets, setBudgets] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState('');
   const [error, setError] = useState('');
@@ -216,11 +236,13 @@ export function ArtisanMissionsPanel({ artisanId }: { artisanId: string }) {
       setMissions(m);
       // Titres des missions pour lesquelles on a fait une offre
       const known: Record<string, string> = Object.fromEntries(m.map(x => [x.id, x.title]));
+      const budgetOf: Record<string, number> = Object.fromEntries(m.map(x => [x.id, x.budget]));
       const missing = Array.from(new Set(o.map(x => x.jobId).filter(id => !known[id])));
       await Promise.all(missing.map(async id => {
-        try { known[id] = (await missionService.getMission(id)).title; } catch { known[id] = 'Mission'; }
+        try { const mission = await missionService.getMission(id); known[id] = mission.title; budgetOf[id] = mission.budget; } catch { known[id] = 'Mission'; }
       }));
       setTitles(known);
+      setBudgets(budgetOf);
       setError('');
     } catch (e) {
       console.error(e);
@@ -231,6 +253,13 @@ export function ArtisanMissionsPanel({ artisanId }: { artisanId: string }) {
   }, [artisanId]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Rafraîchissement quand l'autre partie répond (événement émis par l'écoute temps réel de l'application).
+  useEffect(() => {
+    const refresh = () => { load(); };
+    window.addEventListener('ivoire:refresh', refresh);
+    return () => window.removeEventListener('ivoire:refresh', refresh);
+  }, [load]);
 
   const complete = async (id: string) => {
     setBusyId(id);
@@ -289,17 +318,22 @@ export function ArtisanMissionsPanel({ artisanId }: { artisanId: string }) {
             <h3 className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em]">Offres envoyées</h3>
             {offers.length === 0 && <p className="text-xs text-slate-400">Vous n'avez pas encore envoyé d'offre. Parcourez les missions disponibles.</p>}
             {offers.map(o => (
-              <div key={o.id} className="bg-white border border-slate-100 rounded-2xl p-4 flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="font-bold text-sm text-slate-800 truncate">{titles[o.jobId] || 'Mission'}</p>
-                  <p className="text-xs text-slate-400">{formatFcfa(o.proposedPrice)} • {o.delay || '—'}</p>
+              <div key={o.id} className="bg-white border border-slate-100 rounded-2xl p-4 space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-bold text-sm text-slate-800 truncate">{titles[o.jobId] || 'Mission'}</p>
+                    <p className="text-xs text-slate-400">{o.status === 'pending' ? `Délai : ${o.delay || '—'}` : `${formatFcfa(currentPrice(o))} • ${o.delay || '—'}`}</p>
+                  </div>
+                  {o.status !== 'pending' && (
+                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider shrink-0 ${o.status === 'rejected' ? 'bg-rose-50 text-rose-600' : o.status === 'withdrawn' ? 'bg-slate-100 text-slate-500' : 'bg-emerald-50 text-emerald-600'}`}>
+                      {o.status === 'rejected' ? 'Non retenue' : o.status === 'withdrawn' ? 'Retirée' : 'Retenue'}
+                    </span>
+                  )}
                 </div>
-                <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${o.status === 'pending' ? 'bg-amber-50 text-amber-600' : o.status === 'rejected' ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
-                  {o.status === 'pending' ? 'En attente' : o.status === 'rejected' ? 'Non retenue' : 'Retenue'}
-                </span>
+                {o.status === 'pending' && <NegotiationBlock offer={o} viewer="artisan" budget={budgets[o.jobId]} onChanged={load} />}
               </div>
             ))}
-            {pendingOffers.length > 0 && <p className="text-[10px] text-slate-400">{pendingOffers.length} offre(s) en attente de réponse du client.</p>}
+            {pendingOffers.length > 0 && <p className="text-[10px] text-slate-400">{pendingOffers.length} offre(s) en discussion.</p>}
           </section>
         </>
       )}
