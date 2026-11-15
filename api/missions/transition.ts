@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { z } from 'zod';
 import { HttpError, MISSION_STATUS, authenticate, db, readBody } from '../_lib/server.js';
+import { acceptOffer } from '../_lib/missions.js';
 
 /**
  * Transitions du cycle de vie d'une mission, avec contrôle des droits côté serveur :
@@ -11,7 +12,7 @@ import { HttpError, MISSION_STATUS, authenticate, db, readBody } from '../_lib/s
  */
 
 const Schema = z.discriminatedUnion('action', [
-  z.object({ action: z.literal('accept'), missionId: z.string().min(1).max(64), applicationId: z.string().min(1).max(64) }),
+  z.object({ action: z.literal('accept'), missionId: z.string().min(1).max(64), applicationId: z.string().min(1).max(64), expectedPrice: z.number().int().optional() }),
   z.object({ action: z.literal('complete'), missionId: z.string().min(1).max(64) }),
 ]);
 
@@ -27,32 +28,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const mission = await db.get('jobs', input.missionId);
 
     if (input.action === 'accept') {
+      // Le client accepte le dernier prix de l'artisan (même règle que /api/missions/negotiate).
       if (mission.employerId !== user.$id) throw new HttpError(403, "Seul le client qui a publié la mission peut accepter une offre.");
-      if (mission.status !== MISSION_STATUS.OPEN) throw new HttpError(409, "Cette mission n'accepte plus d'offres.");
-
       const offer = await db.get('applications', input.applicationId);
-      if (offer.jobId !== mission.$id) throw new HttpError(400, "Cette offre ne correspond pas à la mission.");
-      if (offer.status !== 'pending') throw new HttpError(409, "Cette offre n'est plus en attente.");
-
-      const price = Math.round(Number(offer.proposedPrice));
-      if (!Number.isFinite(price) || price <= 0) throw new HttpError(400, "Le prix de l'offre est invalide.");
-
-      // Le prix convenu est figé ici, côté serveur : c'est lui qui sera facturé en fin de mission.
-      await db.update('jobs', mission.$id, {
-        status: MISSION_STATUS.ASSIGNED,
-        assignedArtisanId: offer.candidateId,
-        assignedApplicationId: offer.$id,
-        agreedPrice: price,
-        assignedAt: new Date().toISOString(),
-      });
-      await db.update('applications', offer.$id, { status: 'accepted' });
-
-      const others = await db.listEqual('applications', 'jobId', mission.$id);
-      await Promise.all(
-        others
-          .filter((o) => o.$id !== offer.$id && o.status === 'pending')
-          .map((o) => db.update('applications', o.$id, { status: 'rejected' })),
-      );
+      const { price } = await acceptOffer(user.$id, mission, offer, input.expectedPrice);
       return res.status(200).json({ success: true, status: MISSION_STATUS.ASSIGNED, agreedPrice: price });
     }
 

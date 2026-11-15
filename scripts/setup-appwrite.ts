@@ -129,6 +129,8 @@ const COLLECTIONS: CollectionDef[] = [
       s('jobId', 64), s('employerId', 64), s('candidateId', 64), s('candidateName', 120), s('photoURL', 1000),
       i('experienceYears'), i('proposedPrice'), s('delay', 120), s('message', 1000), s('status', 20), s('createdAt', 40),
       s('trades', 40, true),
+      // Négociation du prix (voir api/_lib/negotiation.ts) :
+      s('lastProposedBy', 10), i('rounds'), s('history', 4000),
     ],
     indexes: [
       { key: 'idx_job', attributes: ['jobId'] },

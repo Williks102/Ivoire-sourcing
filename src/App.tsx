@@ -112,18 +112,35 @@ export default function App() {
       }
     );
 
-    // Nouvelle offre d'artisan : prévenir le client concerné et l'administration (le temps réel respecte les droits de lecture).
+    // Offres et négociation de prix : prévenir la partie concernée et rafraîchir ses écrans
+    // (le temps réel respecte les droits de lecture : seuls le client, l'artisan et l'admin reçoivent l'événement).
+    const fmt = (n: unknown) => `${Math.round(Number(n) || 0).toLocaleString('fr-FR')} FCFA`;
     const unsubscribeOffers = client.subscribe(
       `databases.${APPWRITE_CONFIG.DATABASE_ID}.collections.applications.documents`,
       (event) => {
-        if (!event.events.some(e => e.endsWith('.create'))) return;
         const payload = event.payload as any;
         const current = me();
-        if (!current || payload?.candidateId === current.uid) return;
-        if (current.role === 'admin' || payload?.employerId === current.uid) {
-          const price = payload?.proposedPrice ? ` — ${Math.round(payload.proposedPrice).toLocaleString('fr-FR')} FCFA` : '';
-          addToast(`📩 Nouvelle offre de ${payload?.candidateName || 'un artisan'}${price}`, 'success');
+        if (!current) return;
+        window.dispatchEvent(new CustomEvent('ivoire:refresh'));
+        const isCreate = event.events.some(e => e.endsWith('.create'));
+        const isUpdate = event.events.some(e => e.endsWith('.update'));
+        const isClient = payload?.employerId === current.uid;
+        const isArtisan = payload?.candidateId === current.uid;
+
+        if (isCreate && !isArtisan && (current.role === 'admin' || isClient)) {
+          addToast(`📩 Nouvelle offre de ${payload?.candidateName || 'un artisan'} — ${fmt(payload?.proposedPrice)}`, 'success');
         }
+        if (isUpdate && payload?.status === 'pending') {
+          // Contre-proposition de l'autre partie
+          if (isArtisan && payload?.lastProposedBy === 'client') addToast(`💬 Le client vous propose ${fmt(payload.proposedPrice)} : acceptez ou répondez.`, 'info');
+          if (isClient && payload?.lastProposedBy === 'artisan') addToast(`💬 ${payload?.candidateName || 'L\'artisan'} propose ${fmt(payload.proposedPrice)} : acceptez ou répondez.`, 'info');
+        }
+        if (isUpdate && payload?.status === 'accepted') {
+          if (isArtisan) addToast(`🎉 Votre offre à ${fmt(payload.proposedPrice)} a été retenue : la mission est à vous !`, 'success');
+          if (isClient) addToast(`🎉 ${payload?.candidateName || 'L\'artisan'} est retenu à ${fmt(payload.proposedPrice)}.`, 'success');
+        }
+        if (isUpdate && isArtisan && payload?.status === 'rejected') addToast('Le client a refusé votre offre.', 'info');
+        if (isUpdate && isClient && payload?.status === 'withdrawn') addToast(`${payload?.candidateName || 'L\'artisan'} a retiré son offre.`, 'info');
       }
     );
 

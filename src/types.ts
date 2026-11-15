@@ -93,12 +93,17 @@ export interface Application {
   jobId: string;
   candidateId: string;
   employerId: string;
-  status: 'pending' | 'accepted' | 'rejected' | 'approved'; // 'approved' = ancien libellé de 'accepted'
+  // 'pending' = en discussion ; 'rejected' = refusée par le client ; 'withdrawn' = retirée par l'artisan ; 'approved' = ancien libellé de 'accepted'
+  status: 'pending' | 'accepted' | 'rejected' | 'withdrawn' | 'approved';
   message: string;
   /** Prix proposé par l'artisan, en FCFA. Devient le prix convenu si l'offre est acceptée. */
   proposedPrice?: number;
   /** Délai / disponibilité annoncé (texte libre). */
   delay?: string;
+  /** Négociation : qui a fait la dernière proposition, nombre de propositions, historique (JSON). */
+  lastProposedBy?: 'artisan' | 'client';
+  rounds?: number;
+  history?: string;
   /** Métiers de l'artisan au moment de l'offre (copiés de son profil par le serveur). */
   trades?: string[];
   createdAt: string;

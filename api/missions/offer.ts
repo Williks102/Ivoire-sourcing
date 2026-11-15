@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { z } from 'zod';
 import { HttpError, MISSION_STATUS, authenticate, db, readBody, sanitizeText } from '../_lib/server.js';
+import { initialProposal } from '../_lib/negotiation.js';
 
 /**
  * Envoi d'une offre (devis) par un artisan. Écrite par le serveur : l'identité de l'artisan
@@ -54,7 +55,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         photoURL,
         trades,
         experienceYears: input.experienceYears,
-        proposedPrice: input.proposedPrice,
+        ...initialProposal(input.proposedPrice, new Date().toISOString()),
         delay: sanitizeText(input.delay, 120),
         message: sanitizeText(input.message, 1000),
         status: 'pending',
