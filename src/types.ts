@@ -26,6 +26,9 @@ export interface UserProfile {
   experienceYears?: number;
   /** Villes où l'artisan accepte d'intervenir. */
   serviceCities?: string[];
+  /** L'artisan accepte d'être contacté par WhatsApp pour des missions (explicite, jamais coché par défaut). */
+  whatsappConsent?: boolean;
+  whatsappConsentAt?: string;
   isVerified: boolean;
   isPremium: boolean;
   averageRating: number;
@@ -78,6 +81,11 @@ export interface JobPost {
   payoutStatus?: 'pending' | 'sent';
   payoutSentAt?: string;
   payoutReference?: string;
+  // Analyse IA faite à la publication (facultative) :
+  aiSummary?: string;
+  aiTags?: string[];
+  aiMissing?: string[];
+  aiCategory?: string;
 }
 
 export interface Application {

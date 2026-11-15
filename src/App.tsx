@@ -217,6 +217,27 @@ export default function App() {
     };
   }, []);
 
+  // Lien direct vers une mission (ex : message WhatsApp envoyé aux artisans) : /?mission=<id>
+  useEffect(() => {
+    const missionId = new URLSearchParams(window.location.search).get('mission');
+    if (!missionId) return;
+    (async () => {
+      try {
+        const job = await missionService.getMission(missionId);
+        window.history.replaceState({}, '', window.location.pathname);
+        if (job.status === 'approved') {
+          setSelectedJob(job);
+          setView('jobs');
+        } else {
+          addToast("Cette mission n'est plus disponible.", 'info');
+        }
+      } catch {
+        window.history.replaceState({}, '', window.location.pathname);
+        addToast('Mission introuvable.', 'error');
+      }
+    })();
+  }, []);
+
   useEffect(() => {
     if (!loading && !user && (view === 'dashboard' || view === 'post-job')) {
       setView('landing');

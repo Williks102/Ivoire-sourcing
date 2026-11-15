@@ -45,6 +45,13 @@ export function PostJobView({ onPosted, profile }: PostJobViewProps) {
         budget,
       });
 
+      // Conseils de l'IA pour obtenir de meilleures offres (facultatifs : absents si l'IA est indisponible).
+      const toast = (m: string) => (window as any).addToast?.(m, 'info');
+      if (result.hints?.missing?.length) toast(`💡 Pour recevoir de meilleures offres : ${result.hints.missing.join(' • ')}`);
+      if (result.hints?.suggestedCategory) {
+        const label = CATEGORIES.find(c => c.id === result.hints!.suggestedCategory)?.label || result.hints.suggestedCategory;
+        toast(`🔎 Cette mission ressemble plutôt au métier « ${label} ». Notre équipe la vérifiera.`);
+      }
       if (result.status === 'pending') {
         alert("Votre mission est en cours de vérification. Elle sera publiée dès validation.");
       }

@@ -38,6 +38,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(422).json({ error: `Annonce refusée par la modération : ${moderation.reason || 'contenu non conforme.'}` });
     }
     const status = moderation.approved ? MISSION_STATUS.OPEN : MISSION_STATUS.PENDING;
+    const analysis = moderation.analysis;
 
     const doc = await db.create('jobs', 'unique()', {
       employerId: user.$id,
@@ -50,9 +51,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       budget: input.budget,
       status,
       createdAt: new Date().toISOString(),
+      // Analyse IA (facultative) : résumé pour les artisans, spécialités, infos manquantes, métier suggéré.
+      aiSummary: analysis?.summary || null,
+      aiTags: analysis?.tags || [],
+      aiMissing: analysis?.missing || [],
+      aiCategory: analysis?.category || null,
     });
 
-    return res.status(200).json({ success: true, id: doc.$id, status });
+    return res.status(200).json({
+      success: true,
+      id: doc.$id,
+      status,
+      // Conseils affichés au client après la publication.
+      hints: {
+        missing: analysis?.missing || [],
+        suggestedCategory: analysis?.category && analysis.category !== input.category ? analysis.category : null,
+      },
+    });
   } catch (error: any) {
     if (error instanceof HttpError) return res.status(error.status).json({ error: error.message });
     console.error('[missions/create]', error?.message);

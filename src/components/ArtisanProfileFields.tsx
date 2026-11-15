@@ -10,6 +10,8 @@ interface Props {
   setExperience: (v: number) => void;
   serviceCities: string[];
   setServiceCities: (v: string[]) => void;
+  whatsappConsent: boolean;
+  setWhatsappConsent: (v: boolean) => void;
 }
 
 const toggle = (list: string[], value: string) => (list.includes(value) ? list.filter(v => v !== value) : [...list, value]);
@@ -20,7 +22,7 @@ const chip = (active: boolean) =>
 const label = 'text-[10px] uppercase font-black text-slate-400 block mb-2';
 
 /** Champs propres au profil artisan : métiers, spécialités, expérience, zones d'intervention. */
-export function ArtisanProfileFields({ trades, setTrades, skills, setSkills, experience, setExperience, serviceCities, setServiceCities }: Props) {
+export function ArtisanProfileFields({ trades, setTrades, skills, setSkills, experience, setExperience, serviceCities, setServiceCities, whatsappConsent, setWhatsappConsent }: Props) {
   const [custom, setCustom] = useState('');
 
   // Suggestions = spécialités des métiers choisis (ou de tous si aucun métier n'est encore choisi).
@@ -90,6 +92,19 @@ export function ArtisanProfileFields({ trades, setTrades, skills, setSkills, exp
           ))}
         </div>
       </div>
+
+      <label className="flex items-start gap-3 bg-emerald-50/60 border border-emerald-100 rounded-2xl p-4 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={whatsappConsent}
+          onChange={e => setWhatsappConsent(e.target.checked)}
+          className="mt-0.5 h-4 w-4 rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500"
+        />
+        <span className="text-xs text-slate-700 leading-relaxed">
+          <b>Recevoir les missions par WhatsApp.</b> J'accepte que l'équipe IvoireSource me contacte sur le numéro de mon profil
+          pour me proposer des missions correspondant à mes métiers et à mes zones. Je peux retirer mon accord à tout moment ici.
+        </span>
+      </label>
     </div>
   );
 }
