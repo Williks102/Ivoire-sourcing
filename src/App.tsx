@@ -150,6 +150,11 @@ export default function App() {
         if (u) {
           const profileData = await profileService.ensure(u);
           setProfile(profileData);
+          // Retour de Google (successUrl = /dashboard) : on ouvre directement le tableau de bord.
+          if (window.location.pathname === '/dashboard') {
+            setView('dashboard');
+            window.history.replaceState({}, '', '/');
+          }
         } else {
           setProfile(null);
         }
@@ -257,14 +262,14 @@ export default function App() {
     try {
       localStorage.removeItem('demo_user');
       localStorage.removeItem('demo_profile');
-      if (false) {
-        await authService.logout();
-      }
+      await authService.logout(); // ferme la session Appwrite (sinon l'utilisateur reste connecté au rechargement)
     } catch (err) {
       console.error("Logout error:", err);
     }
     setUser(null);
     setProfile(null);
+    setDashboardTab('overview');
+    setIsMenuOpen(false);
     setView('landing');
     addToast('🚪 Vous avez été déconnecté.', 'info');
   };
@@ -417,84 +422,28 @@ export default function App() {
     const cleanedEmail = email.trim().toLowerCase();
     setAttemptedRole('candidate');
 
-    
-
     try {
-      addToast("🔑 Authentification Backend...", "info");
-      let u: any = null;
-      let isNewUser = false;
-      
-      try {
-        // Attempt sign in
-        const loginResult = await authService.login({email: cleanedEmail, password});
-        u = loginResult.user;
-      } catch (loginErr: any) {
-        console.warn("Connexion attempt failed, checking for auto-signup...", loginErr);
-        if (loginErr.code === 'auth/user-not-found' || loginErr.code === 'auth/invalid-credential' || loginErr.message?.includes('user-not-found')) {
-          try {
-            // Auto inscription since user does not exist
-            addToast("✨ Compte inexistant. Création automatique...", "info");
-            const signupResult = await authService.register({name: cleanedEmail.split("@")[0], email: cleanedEmail, password});
-            u = signupResult.user;
-            isNewUser = true;
-          } catch (signupErr: any) {
-            if (signupErr.code === 'auth/email-already-in-use') {
-              throw new Error("Mot de passe incorrect ou informations de connexion invalides.");
-            } else {
-              throw signupErr;
-            }
-          }
-        } else if (loginErr.message?.includes('api-key-not-valid')) {
-          throw loginErr; // bubble up for the api-key fallback
-        } else {
-          throw loginErr;
-        }
-      }
-
-      if (!u) {
-        throw new Error("Authentification échouée.");
-      }
-
-      // Sync user profile in Backend
+      addToast("🔑 Authentification...", "info");
+      const { user: u } = await authService.login({ email: cleanedEmail, password });
       const profileData = await profileService.ensure(u);
+      setUser(u);
       setProfile(profileData);
-      if (isNewUser) addToast('📝 Profil créé automatiquement !', 'success');
-      
       setShowGeneralLoginModal(false);
       setView('dashboard');
-      addToast(isNewUser ? `🎉 Compte créé et connexion réussie !` : `🚀 Connexion réussie !`, 'success');
+      addToast('🚀 Connexion réussie !', 'success');
     } catch (err: any) {
-      console.error("Backend Login Error", err);
-      if (err.message && err.message.includes('api-key-not-valid')) {
-        addToast("⚠️ Clé ou Configuration Backend non opérationnelle. Connexion via simulation locale...", "info");
-        handleLocalSimulationConnexion(cleanedEmail, password);
-      } else {
-        addToast(`⚠️ Identifiants incorrects ou Erreur : ${err.message || err.code}`, 'error');
-      }
+      console.error("Login error", err);
+      addToast(`⚠️ ${err.message || "Connexion impossible."}`, 'error');
     }
   };
 
   const executeGoogleLogin = async () => {
-    
-
     try {
-      addToast("🔑 Authentification Google...", "info");
-      await authService.loginWithGoogle();
-      const u = await authService.getCurrentUser();
-      
-      const profileData = await profileService.ensure(u);
-      setProfile(profileData);
-      setShowGeneralLoginModal(false);
-      setView('dashboard');
-      addToast(`🚀 Connexion Google réussie !`, 'success');
+      addToast("🔑 Redirection vers Google...", "info");
+      await authService.loginWithGoogle(); // redirige la page ; la session est reprise au retour (voir effet de démarrage)
     } catch (err: any) {
-      console.warn("[Backend] Google Sign-In connection check:", err.message || err);
-      if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
-        addToast("Connexion annulée.", 'info');
-      } else {
-        addToast("⚠️ Backend non opérationnel. Bascule sur la simulation locale...", "info");
-        handleLocalSimulationConnexion("google-user@gmail.com");
-      }
+      console.warn("Google Sign-In error:", err?.message || err);
+      addToast("⚠️ Connexion Google impossible. Utilisez votre e-mail et votre mot de passe.", "error");
     }
   };
 
@@ -515,43 +464,20 @@ export default function App() {
     const cleanedEmail = email.trim().toLowerCase();
     const assignedRole: UserRole = role === 'employer' ? 'employer' : 'candidate'; // jamais admin à l'inscription
 
-    
-
     try {
-      addToast("🔑 Inscription via Backend Auth...", "info");
-      let u: any = null;
-      let shouldCreateProfile = false;
-
-      try {
-        const result = await authService.register({name: cleanedEmail.split("@")[0], email: cleanedEmail, password});
-        u = result.user;
-        shouldCreateProfile = true;
-      } catch (signupErr: any) {
-        if (signupErr.code === 'auth/email-already-in-use') {
-          addToast("💡 Cet e-mail est déjà inscrit. Connexion automatique...", "info");
-          const loginResult = await authService.login({email: cleanedEmail, password});
-        u = loginResult.user;
-        } else {
-          throw signupErr;
-        }
-      }
-
-      if (!u) {
-        throw new Error("Authentification échouée.");
-      }
-
-      const profileData = await profileService.ensure(u, assignedRole, name);
+      addToast("🔑 Création du compte...", "info");
+      const { user: u } = await authService.register({ name: name.trim(), email: cleanedEmail, password });
+      const profileData = await profileService.ensure(u, assignedRole, name.trim());
+      setUser(u);
       setProfile(profileData);
-      const defaultRole = profileData.role;
-
       setShowGeneralLoginModal(false);
       setView('dashboard');
-      addToast(shouldCreateProfile ? `🎉 Compte créé en tant que ${defaultRole === 'employer' ? 'Client' : 'Artisan'} !` : `🚀 Connexion réussie !`, 'success');
+      addToast(`🎉 Compte créé en tant que ${profileData.role === 'employer' ? 'Client' : 'Artisan'} !`, 'success');
     } catch (err: any) {
-      console.error("Backend Inscription Error:", err);
-      if (err.message && err.message.includes('api-key-not-valid')) {
-        addToast("⚠️ Clé ou Configuration Backend non opérationnelle. Inscription via simulation locale...", "info");
-        handleLocalSimulationInscription(name, cleanedEmail, assignedRole, password);
+      console.error("Signup error:", err);
+      if (err.code === 409) {
+        addToast("Cette adresse e-mail est déjà inscrite : utilisez l'onglet Connexion.", 'error');
+        setModalActiveTab('login');
       } else {
         addToast(`⚠️ Échec de l'inscription : ${err.message || err.code}`, 'error');
       }
@@ -661,7 +587,7 @@ export default function App() {
             {user ? (
               <div className="flex items-center gap-4">
                 {profile?.role === 'admin' && (
-                  <span className="text-[10px] font-extrabold text-[#e11d48] border border-rose-300 bg-rose-50 px-2 py-0.5 rounded-full uppercase tracking-wider">ADMIN</span>
+                  <button onClick={() => { setDashboardTab('admin'); setView('dashboard'); }} className="text-[10px] font-extrabold text-[#e11d48] border border-rose-300 bg-rose-50 hover:bg-rose-100 px-3 py-1 rounded-full uppercase tracking-wider transition-all">Panel admin</button>
                 )}
                 <button onClick={() => setView('dashboard')} className="w-10 h-10 bg-slate-200 rounded-full border-2 border-white shadow-sm overflow-hidden">
                   <img src={profile?.photoURL || 'https://via.placeholder.com/40'} alt="Profile" className="w-full h-full object-cover" />
@@ -795,6 +721,7 @@ export default function App() {
               setActiveTab={setDashboardTab} 
               onProfileUpdate={(p) => setProfile(p)}
               setView={setView}
+              onLogout={handleLogout}
             />
           )}
         </AnimatePresence>

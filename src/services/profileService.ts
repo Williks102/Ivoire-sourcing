@@ -58,6 +58,8 @@ export const profileService = {
       ]);
       profile = data as UserProfile;
     }
-    return this.isAdmin(user) ? { ...profile, role: 'admin' } : profile;
+    // Le rôle admin vient UNIQUEMENT du label Appwrite : un « admin » écrit dans le document est ignoré.
+    if (this.isAdmin(user)) return { ...profile, role: 'admin' };
+    return profile.role === 'admin' ? { ...profile, role: 'candidate' } : profile;
   },
 };

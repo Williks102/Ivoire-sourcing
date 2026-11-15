@@ -71,6 +71,7 @@ interface DashboardViewProps {
   setActiveTab: (tab: any) => void;
   onProfileUpdate: (p: UserProfile) => void;
   setView: (v: any) => void;
+  onLogout: () => void;
 }
 
 export function DashboardView({
@@ -79,7 +80,8 @@ export function DashboardView({
   activeTab,
   setActiveTab,
   onProfileUpdate,
-  setView
+  setView,
+  onLogout
 }: DashboardViewProps) {
   const isBackendAvailable = getIsBackendAvailable();
   const [isMobile, setIsMobile] = useState<boolean>(false);
@@ -1124,7 +1126,7 @@ export function DashboardView({
            </div>
            
            <div className="flex flex-col gap-2">
-              <button onClick={() => signOut(auth)} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold text-red-500 hover:bg-red-50 transition-all">
+              <button onClick={onLogout} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold text-red-500 hover:bg-red-50 transition-all">
                 <LogOut className="h-4 w-4" /> Déconnexion
               </button>
            </div>
@@ -1418,9 +1420,8 @@ export function DashboardView({
                                      value={adminUserForm.role}
                                      onChange={e => setAdminUserForm({...adminUserForm, role: e.target.value as any})}
                                    >
-                                      <option value="candidate">Candidat (Recherche d'emploi)</option>
-                                      <option value="employer">Employeur (Recruteur)</option>
-                                      <option value="admin">Administrateur</option>
+                                      <option value="candidate">Artisan (propose ses services)</option>
+                                      <option value="employer">Client (publie des missions)</option>
                                    </select>
                                 </div>
                                 <div>
@@ -1513,7 +1514,7 @@ export function DashboardView({
                                            </td>
                                            <td className="px-6 py-4">
                                               <span className={`px-2.5 py-1 rounded-lg text-[9px] font-bold uppercase tracking-wider ${u.role === 'admin' ? 'bg-purple-100 text-purple-750' : u.role === 'employer' ? 'bg-blue-105 text-blue-700' : 'bg-amber-100 text-amber-700'}`}>
-                                                 {u.role}
+                                                 {u.role === 'candidate' ? 'Artisan' : u.role === 'employer' ? 'Client' : u.role === 'admin' ? 'Admin' : u.role}
                                               </span>
                                            </td>
                                            <td className="px-6 py-4">
@@ -1657,11 +1658,11 @@ export function DashboardView({
                                     />
                                  </div>
                                  <div>
-                                    <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">ID Recruteur / Employeur</label>
+                                    <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Identifiant du client</label>
                                     <input 
                                       required 
                                       className="w-full bg-slate-50 px-3 py-2 text-xs rounded-lg border-none focus:ring-1 focus:ring-emerald-500 outline-none h-10 font-semibold" 
-                                      placeholder="Nom ou uid de l'employeur (ex: system)"
+                                      placeholder="Identifiant du compte client"
                                       value={adminJobForm.employerId} 
                                       onChange={e => setAdminJobForm({...adminJobForm, employerId: e.target.value})} 
                                     />
@@ -1788,7 +1789,7 @@ export function DashboardView({
                              <table className="w-full text-left text-sm whitespace-nowrap">
                                 <thead className="bg-slate-50/75 border-b border-slate-100 text-[10px] uppercase font-bold text-slate-400">
                                    <tr>
-                                      <th className="px-6 py-4">Candidat</th>
+                                      <th className="px-6 py-4">Artisan</th>
                                       <th className="px-6 py-4">Annonce Concernée</th>
                                       <th className="px-6 py-4">Message</th>
                                       <th className="px-6 py-4">État de la relation</th>
@@ -1894,7 +1895,7 @@ export function DashboardView({
                        <div>
                           <h3 className="font-bold text-slate-800 uppercase tracking-tight text-md">{profile.displayName}</h3>
                           <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-1 bg-slate-100 rounded-full text-slate-500 inline-block mt-1">
-                             {profile.role === 'candidate' ? 'Candidat' : profile.role === 'employer' ? 'Recruteur / Employeur' : 'Administrateur'}
+                             {profile.role === 'candidate' ? 'Artisan' : profile.role === 'employer' ? 'Client' : 'Administrateur'}
                           </span>
                        </div>
 
@@ -2127,7 +2128,7 @@ export function DashboardView({
                                ? 'Votre identité a été validée par nos agents IvoSource. Vous bénéficiez désormais d’une priorité maximale dans les recherches de candidats.'
                                : profile.verificationDocs && profile.verificationDocs.length > 0
                                  ? 'Vos pièces justificatives sont en cours d’audit. Validation sous 24h ouvrées. Vous recevrez une notification par email.'
-                                 : 'Pour obtenir le statut de candidat certifié, déposez vos documents officiels. Nos équipes valideront vos informations sous 24h.'}
+                                 : 'Pour obtenir le statut d\'artisan certifié, déposez vos documents officiels. Nos équipes valideront vos informations sous 24h.'}
                            </p>
                         </div>
                      </div>
@@ -2622,9 +2623,8 @@ export function DashboardView({
                           onChange={(e) => changeUserRoleInReview(e.target.value as UserRole)}
                           className="w-full bg-white border border-slate-200 text-slate-700 text-xs rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
                         >
-                           <option value="candidate">Candidat (Recherche d'Emploi)</option>
-                           <option value="employer">Recruteur / Employeur</option>
-                           <option value="admin">Administrateur Système</option>
+                           <option value="candidate">Artisan (propose ses services)</option>
+                           <option value="employer">Client (publie des missions)</option>
                         </select>
                      </div>
 
