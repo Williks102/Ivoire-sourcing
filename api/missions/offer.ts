@@ -7,6 +7,8 @@ import { HttpError, MISSION_STATUS, authenticate, db, readBody, sanitizeText } f
  * vient du JWT, le client concerné de la mission, et l'offre n'est lisible que par ces deux personnes.
  */
 
+const CATEGORIES = ['plomberie', 'electricite', 'climatisation', 'peinture', 'menage', 'autre'] as const;
+
 const Schema = z.object({
   missionId: z.string().min(1).max(64),
   proposedPrice: z.number().int().min(500).max(10_000_000),
@@ -33,7 +35,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (existing.some((o) => o.candidateId === user.$id)) throw new HttpError(409, 'Vous avez déjà envoyé une offre pour cette mission.');
 
     let photoURL: string | null = null;
-    try { photoURL = (await db.get('users', user.$id)).photoURL || null; } catch { /* profil absent */ }
+    let trades: string[] = [];
+    try {
+      const profile = await db.get('users', user.$id);
+      photoURL = profile.photoURL || null;
+      // Les métiers viennent du profil (et non de la requête) : le client voit ce que l'artisan a déclaré.
+      trades = (Array.isArray(profile.trades) ? profile.trades : []).filter((t: unknown) => typeof t === 'string' && (CATEGORIES as readonly string[]).includes(t)).slice(0, 6);
+    } catch { /* profil absent */ }
 
     const doc = await db.create(
       'applications',
@@ -44,6 +52,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         candidateId: user.$id,
         candidateName: sanitizeText(input.artisanName, 80),
         photoURL,
+        trades,
         experienceYears: input.experienceYears,
         proposedPrice: input.proposedPrice,
         delay: sanitizeText(input.delay, 120),

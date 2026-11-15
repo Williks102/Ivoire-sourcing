@@ -16,7 +16,7 @@ serveur : **seul le serveur** écrit `agreedPrice`, `assignedArtisanId`, `paid*`
 ### `users` (id du document = id du compte Appwrite)
 `uid` string · `role` string (`candidate` = artisan, `employer` = client) · `displayName` string · `email` string ·
 `photoURL` string · `location` string · `bio` string · `skills` string[] · `isVerified` bool · `isPremium` bool ·
-`averageRating` float · `reviewCount` int · `phone` string · `cvName` string · `cvUrl` string · `createdAt` string ·
+`averageRating` float · `reviewCount` int · `trades` string[] (métiers de l'artisan : plomberie, electricite, …) · `serviceCities` string[] · `experienceYears` int · `phone` string · `cvName` string · `cvUrl` string · `createdAt` string ·
 `verificationDocs` string (JSON ; à terme, stocker les fichiers dans Storage plutôt qu'en base64)
 
 ### `jobs` (= missions)
@@ -30,7 +30,7 @@ Index conseillés : `employerId`, `assignedArtisanId`, `status`.
 
 ### `applications` (= offres / devis)
 `jobId` string · `employerId` string · `candidateId` string · `candidateName` string · `photoURL` string ·
-`experienceYears` int · `proposedPrice` int (FCFA) · `delay` string · `message` string · `status` string
+`experienceYears` int · `trades` string[] (copiés du profil par le serveur) · `proposedPrice` int (FCFA) · `delay` string · `message` string · `status` string
 (`pending` | `accepted` | `rejected`) · `createdAt` string
 
 Index conseillés : `jobId`, `candidateId`.

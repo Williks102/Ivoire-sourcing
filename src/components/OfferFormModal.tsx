@@ -22,7 +22,7 @@ interface OfferFormModalProps {
 export function OfferFormModal({ job, profile, onClose, onSubmit }: OfferFormModalProps) {
   const [name, setName] = useState(profile?.displayName || '');
   const [phone, setPhone] = useState(profile?.phone || '');
-  const [experience, setExperience] = useState<number>(1);
+  const [experience, setExperience] = useState<number>(profile?.experienceYears ?? 1);
   const [price, setPrice] = useState<string>(job?.budget ? String(job.budget) : '');
   const [delay, setDelay] = useState('');
   const [message, setMessage] = useState('');
@@ -69,6 +69,12 @@ export function OfferFormModal({ job, profile, onClose, onSubmit }: OfferFormMod
         </div>
 
         <form onSubmit={submit} className="p-6 overflow-y-auto space-y-4">
+          {!profile?.trades?.length && (
+            <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-xl p-3">
+              Votre profil n'indique pas encore vos métiers. Complétez-le dans « Mon Profil » : les clients voient vos métiers avec votre offre.
+            </p>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className={label}><User className="inline h-3 w-3 mr-1" />Nom complet</label>

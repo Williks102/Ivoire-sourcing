@@ -85,6 +85,8 @@ const COLLECTIONS: CollectionDef[] = [
       s('uid', 64), s('role', 20), s('displayName', 120), s('email', 255), s('photoURL', 1000), s('location', 120),
       s('bio', 2000), s('skills', 100, true), b('isVerified'), b('isPremium'), f('averageRating'), i('reviewCount'),
       s('phone', 30), s('cvName', 255), s('cvUrl', 500000), s('createdAt', 40),
+      // Profil artisan :
+      s('trades', 40, true), s('serviceCities', 60, true), i('experienceYears'),
       // Liste de pièces au format JSON. À terme : stocker les fichiers dans Storage plutôt qu'en base64.
       s('verificationDocs', 2000000),
     ],
@@ -121,6 +123,7 @@ const COLLECTIONS: CollectionDef[] = [
     attributes: [
       s('jobId', 64), s('employerId', 64), s('candidateId', 64), s('candidateName', 120), s('photoURL', 1000),
       i('experienceYears'), i('proposedPrice'), s('delay', 120), s('message', 1000), s('status', 20), s('createdAt', 40),
+      s('trades', 40, true),
     ],
     indexes: [
       { key: 'idx_job', attributes: ['jobId'] },
@@ -194,7 +197,9 @@ async function main() {
   }
 
   console.log('\nStockage');
-  await ensure(`bucket ${BUCKET_ID}`, 'POST', '/storage/buckets', {
+  const bucket = await call('GET', `/storage/buckets/${BUCKET_ID}`);
+  if (bucket.status === 200) console.log(`  = bucket ${BUCKET_ID} (déjà présent)`);
+  else await ensure(`bucket ${BUCKET_ID}`, 'POST', '/storage/buckets', {
     bucketId: BUCKET_ID, name: 'Documents', permissions: ['create("users")'], fileSecurity: true,
     maximumFileSize: 10_000_000, allowedFileExtensions: ['pdf', 'jpg', 'jpeg', 'png'],
   });

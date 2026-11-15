@@ -39,7 +39,7 @@ const normalizeData = (document: any) => {
   return data;
 };
 const serializeData = (data: any) => {
-  const payload = { ...data };
+  const payload = Object.fromEntries(Object.entries(data).filter(([k]) => !k.startsWith('$'))) as any;
   if (Array.isArray(payload.verificationDocs)) payload.verificationDocs = JSON.stringify(payload.verificationDocs);
   return payload;
 };

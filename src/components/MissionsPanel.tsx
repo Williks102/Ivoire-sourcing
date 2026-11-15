@@ -136,6 +136,11 @@ function ClientMissionCard({ mission, onChanged }: { mission: JobPost; onChanged
                   <div key={o.id} className="bg-white border border-slate-100 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div className="min-w-0">
                       <p className="font-bold text-sm text-slate-800">{o.candidateName || 'Artisan'} <span className="text-slate-400 font-medium text-xs">• {o.experienceYears ?? 0} an(s) d'expérience</span></p>
+                      {!!o.trades?.length && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {o.trades.map(t => <span key={t} className="text-[9px] font-black uppercase tracking-wider bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{categoryLabel(t)}</span>)}
+                        </div>
+                      )}
                       <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5"><Clock className="h-3 w-3" /> {o.delay || 'Délai non précisé'}</p>
                       {o.message && <p className="text-xs italic text-slate-500 mt-1">« {o.message} »</p>}
                     </div>

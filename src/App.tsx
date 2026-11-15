@@ -240,7 +240,7 @@ export default function App() {
       displayName: mockUser.displayName,
       email: mockUser.email,
       photoURL: mockUser.photoURL,
-      skills: role === 'candidate' ? ["Garde d'enfants", "Ménage", "Cuisine africaine"] : [],
+      skills: role === 'candidate' ? ["Plomberie", "Dépannage"] : [],
       isVerified: role === 'candidate', // candidate pre-certified for easy simulator use
       isPremium: role === 'employer',
       averageRating: role === 'candidate' ? 4.9 : 0,
@@ -334,7 +334,7 @@ export default function App() {
         displayName: mockUser.displayName,
         email: mockUser.email,
         photoURL: mockUser.photoURL,
-        skills: userRole === 'candidate' ? ["Garde d'enfants", "Ménage", "Cuisine africaine"] : [],
+        skills: userRole === 'candidate' ? ["Plomberie", "Dépannage"] : [],
         isVerified: userRole === 'candidate',
         isPremium: userRole === 'employer',
         averageRating: userRole === 'candidate' ? 4.9 : 0,
@@ -387,7 +387,7 @@ export default function App() {
       displayName: name,
       email: cleanedEmail,
       photoURL: mockUser.photoURL,
-      skills: assignedRole === 'candidate' ? ["Garde d'enfants", "Ménage"] : [],
+      skills: assignedRole === 'candidate' ? ["Plomberie", "Dépannage"] : [],
       isVerified: false,
       isPremium: assignedRole === 'employer',
       averageRating: 0,
@@ -687,6 +687,7 @@ export default function App() {
                 selectedCity={selectedCity}
                 setSelectedCity={setSelectedCity}
                 onApply={handleApply}
+                myTrades={profile?.role === 'candidate' ? profile.trades : undefined}
                 canApply={profile?.role === 'candidate'}
                 onPostJob={() => setView('post-job')}
                 isEmployer={profile?.role === 'employer' || profile?.role === 'admin'}
