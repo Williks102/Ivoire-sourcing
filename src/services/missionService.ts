@@ -2,8 +2,11 @@ import { Query } from 'appwrite';
 import { databases, APPWRITE_CONFIG } from '../lib/appwrite';
 import { authFetch } from '../lib/api';
 import { Application, JobPost } from '../types';
+import { Quote } from '../lib/quote';
 
 const DB = APPWRITE_CONFIG.DATABASE_ID;
+
+export interface PdfDoc { filename: string; pdfBase64: string }
 
 export interface OutreachCandidate {
   id: string;
@@ -103,6 +106,8 @@ export const missionService = {
     proposedPrice: number;
     delay: string;
     message: string;
+    /** Devis détaillé facultatif : le serveur recalcule le total, qui devient le prix de l'offre. */
+    quote?: Quote;
   }) =>
     authFetch('/api/missions/offer', {
       missionId: input.mission.id,
@@ -111,7 +116,13 @@ export const missionService = {
       proposedPrice: input.proposedPrice,
       delay: input.delay,
       message: input.message,
+      quote: input.quote,
     }),
+
+  // --- Documents PDF produits par le serveur ---
+  quotePdf: (applicationId: string) => authFetch<PdfDoc>('/api/documents', { kind: 'quote', applicationId }),
+  receiptPdf: (missionId: string) => authFetch<PdfDoc>('/api/documents', { kind: 'receipt', missionId }),
+  statementPdf: (year: number) => authFetch<PdfDoc>('/api/documents', { kind: 'statement', year }),
 
   // --- Administration (réservé au label admin, vérifié côté serveur) ---
   adminListPayments: (offset = 0) =>

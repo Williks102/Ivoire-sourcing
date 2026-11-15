@@ -16,7 +16,7 @@ serveur : **seul le serveur** écrit `agreedPrice`, `assignedArtisanId`, `paid*`
 ### `users` (id du document = id du compte Appwrite)
 `uid` string · `role` string (`candidate` = artisan, `employer` = client) · `displayName` string · `email` string ·
 `photoURL` string · `location` string · `bio` string · `skills` string[] · `isVerified` bool · `isPremium` bool ·
-`averageRating` float · `reviewCount` int · `trades` string[] (métiers de l'artisan : plomberie, electricite, …) · `serviceCities` string[] · `experienceYears` int · `whatsappConsent` bool · `whatsappConsentAt` string · `phone` string · `cvName` string · `cvUrl` string · `createdAt` string ·
+`averageRating` float · `reviewCount` int · `trades` string[] (métiers de l'artisan : plomberie, electricite, …) · `serviceCities` string[] · `experienceYears` int · `whatsappConsent` bool · `whatsappConsentAt` string · `businessName` string · `businessRegistration` string · `phone` string · `cvName` string · `cvUrl` string · `createdAt` string ·
 `verificationDocs` string (JSON ; à terme, stocker les fichiers dans Storage plutôt qu'en base64)
 
 ### `jobs` (= missions)
@@ -30,7 +30,7 @@ Index conseillés : `employerId`, `assignedArtisanId`, `status`.
 
 ### `applications` (= offres / devis)
 `jobId` string · `employerId` string · `candidateId` string · `candidateName` string · `photoURL` string ·
-`experienceYears` int · `trades` string[] (copiés du profil par le serveur) · `proposedPrice` int (FCFA, **prix en cours de négociation**) · `lastProposedBy` string (`artisan` | `client`) · `rounds` int · `history` string (JSON) · `delay` string · `message` string · `status` string
+`experienceYears` int · `trades` string[] (copiés du profil par le serveur) · `proposedPrice` int (FCFA, **prix en cours de négociation**) · `lastProposedBy` string (`artisan` | `client`) · `rounds` int · `history` string (JSON) · `quote` string (JSON, devis détaillé facultatif, texte long) · `delay` string · `message` string · `status` string
 (`pending` = en discussion | `accepted` | `rejected` = refusée par le client | `withdrawn` = retirée par l'artisan) · `createdAt` string
 
 Index conseillés : `jobId`, `candidateId`.
@@ -86,6 +86,28 @@ l'encaissé, les commissions et les reversements. « Reversement effectué » pa
 
 Garde-fous : une mission en cours, terminée ou payée ne peut plus être validée, refusée, clôturée ni supprimée depuis
 l'admin, et une offre retenue ne peut pas être supprimée.
+
+## Devis, reçus et revenus
+
+**Devis détaillé (facultatif).** À l'envoi d'une offre, l'artisan peut joindre un devis : lignes (désignation, quantité, unité,
+prix unitaire), remise, validité (1 à 90 jours) et conditions. Le **serveur recalcule le total**, qui devient le prix de l'offre
+(le prix envoyé par le navigateur est ignoré). Maximum 30 lignes ; textes nettoyés (pas de HTML). Sans devis détaillé, l'offre
+reste un simple prix. Le devis suit la négociation : si le prix change, le document affiche une ligne « Ajustement négocié » et
+le total reste égal au prix en cours, puis au **prix convenu** une fois accepté.
+
+**Documents PDF** (`POST /api/documents`, produits côté serveur à partir de la base) :
+- `quote` : devis d'une offre, avec ou sans lignes détaillées (client, artisan concerné, admin) ; numéro `DEV-AAAAMMJJ-XXXX`
+  dérivé de l'offre ;
+- `receipt` : reçu d'une mission **payée** (client, artisan concerné, admin) ; ne mentionne ni la commission ni la part de l'artisan ;
+- `statement` : relevé annuel de revenus de l'artisan connecté (missions payées de l'année, commission, net, reversement).
+
+Aucun numéro de téléphone ni e-mail dans les documents (les échanges restent sur la plateforme). Informations d'entreprise
+facultatives (`businessName`, `businessRegistration`) reprises sur les documents si elles sont renseignées. Ce sont des **devis et
+reçus de la plateforme, pas des factures fiscales certifiées** : à faire valider par un comptable avant tout usage comptable.
+
+**Revenus de l'artisan** (onglet « Mes revenus », sans donnée supplémentaire) : gagné (net), déjà reçu, à recevoir, à venir
+(estimation au taux de commission affiché), prix cumulé, commission payée, panier moyen, taux d'offres retenues, revenus par mois et
+par métier, liste des missions payées avec reçu, export CSV (séparateur « ; », ouvert directement par Excel).
 
 ## Négociation du prix (façon inDrive)
 

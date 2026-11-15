@@ -29,6 +29,9 @@ export interface UserProfile {
   /** L'artisan accepte d'être contacté par WhatsApp pour des missions (explicite, jamais coché par défaut). */
   whatsappConsent?: boolean;
   whatsappConsentAt?: string;
+  /** Informations d'entreprise facultatives (devis et reçus). */
+  businessName?: string;
+  businessRegistration?: string;
   isVerified: boolean;
   isPremium: boolean;
   averageRating: number;
@@ -104,6 +107,8 @@ export interface Application {
   lastProposedBy?: 'artisan' | 'client';
   rounds?: number;
   history?: string;
+  /** Devis détaillé facultatif (JSON). */
+  quote?: string;
   /** Métiers de l'artisan au moment de l'offre (copiés de son profil par le serveur). */
   trades?: string[];
   createdAt: string;

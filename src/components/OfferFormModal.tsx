@@ -3,6 +3,8 @@ import { motion } from 'motion/react';
 import { X, Wallet, Clock, Phone, User } from 'lucide-react';
 import { JobPost, UserProfile } from '../types';
 import { COMMISSION_RATE, formatFcfa } from '../constants';
+import { QuoteEditor, QuoteDraft, draftToQuote, emptyDraft } from './QuoteEditor';
+import { Quote, quoteProblem, quoteSubtotal } from '../lib/quote';
 
 interface OfferFormModalProps {
   job: JobPost | null;
@@ -15,6 +17,7 @@ interface OfferFormModalProps {
     proposedPrice: number;
     delay: string;
     message: string;
+    quote?: Quote;
   }) => Promise<void> | void;
 }
 
@@ -27,16 +30,25 @@ export function OfferFormModal({ job, profile, onClose, onSubmit }: OfferFormMod
   const [delay, setDelay] = useState('');
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
+  const [detailed, setDetailed] = useState(false);
+  const [draft, setDraft] = useState<QuoteDraft>(emptyDraft());
+  const [formError, setFormError] = useState('');
 
   if (!job) return null;
 
-  const priceNumber = Math.round(Number(price.replace(/\s/g, '')));
+  const quoteDraft = detailed ? draftToQuote(draft) : null;
+  const priceNumber = quoteDraft ? quoteSubtotal(quoteDraft) - quoteDraft.discount : Math.round(Number(price.replace(/\s/g, '')));
   const validPrice = Number.isFinite(priceNumber) && priceNumber > 0;
   const commission = validPrice ? Math.round(priceNumber * COMMISSION_RATE) : 0;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !phone.trim() || !validPrice || !delay.trim()) return;
+    if (quoteDraft) {
+      const problem = quoteProblem(quoteDraft);
+      if (problem) { setFormError(problem); return; }
+    }
+    setFormError('');
     setSending(true);
     try {
       await onSubmit({
@@ -46,6 +58,7 @@ export function OfferFormModal({ job, profile, onClose, onSubmit }: OfferFormMod
         proposedPrice: priceNumber,
         delay: delay.trim(),
         message: message.trim(),
+        quote: quoteDraft || undefined,
       });
     } finally {
       setSending(false);
@@ -89,12 +102,23 @@ export function OfferFormModal({ job, profile, onClose, onSubmit }: OfferFormMod
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className={label}><Wallet className="inline h-3 w-3 mr-1" />Votre prix (FCFA)</label>
-              <input required inputMode="numeric" className={field} placeholder="ex: 25000" value={price} onChange={e => setPrice(e.target.value)} />
+              <input required inputMode="numeric" className={field} placeholder="ex: 25000" readOnly={detailed} value={detailed ? String(priceNumber > 0 ? priceNumber : '') : price} onChange={e => setPrice(e.target.value)} />
             </div>
             <div>
               <label className={label}><Clock className="inline h-3 w-3 mr-1" />Délai / disponibilité</label>
               <input required className={field} placeholder="ex: demain matin, 2 jours" value={delay} onChange={e => setDelay(e.target.value)} />
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <button type="button" onClick={() => { setDetailed(!detailed); setFormError(''); }} aria-expanded={detailed}
+              className="text-xs font-bold text-emerald-700 hover:text-emerald-800 underline underline-offset-2">
+              {detailed ? 'Retirer le devis détaillé (prix libre)' : 'Ajouter un devis détaillé (facultatif)'}
+            </button>
+            {detailed && <QuoteEditor value={draft} onChange={setDraft} />}
+            {detailed && quoteDraft && quoteProblem(quoteDraft) && (
+              <p role="status" className="text-xs font-bold text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2">{quoteProblem(quoteDraft)}</p>
+            )}
           </div>
 
           <div>
@@ -116,6 +140,8 @@ export function OfferFormModal({ job, profile, onClose, onSubmit }: OfferFormMod
               <p className="text-[10px] text-emerald-700">Le client peut accepter votre prix ou vous répondre avec un autre : vous pourrez alors accepter, contre-proposer ou vous retirer.</p>
             </div>
           )}
+
+          {formError && <p role="alert" className="text-xs font-bold text-rose-600">{formError}</p>}
 
           <button type="submit" disabled={sending || !validPrice}
             className="w-full bg-slate-900 text-white font-bold py-4 rounded-xl hover:bg-black transition-all disabled:opacity-50">

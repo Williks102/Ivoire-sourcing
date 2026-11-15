@@ -22,6 +22,7 @@ import { sourcingService } from './services/sourcingService';
 import { profileService } from './services/profileService';
 import client, { databases, APPWRITE_CONFIG } from './lib/appwrite';
 import { missionService } from './services/missionService';
+import { Quote } from './lib/quote';
 import { UserProfile, JobPost, UserRole } from './types';
 import { LandingView } from './components/LandingView';
 import { JobListView, JobDetailView } from './components/JobListView';
@@ -52,7 +53,7 @@ export default function App() {
   const [selectedCity, setSelectedCity] = useState<string>('');
   const [jobs, setJobs] = useState<JobPost[]>([]);
   const [selectedJob, setSelectedJob] = useState<JobPost | null>(null);
-  const [dashboardTab, setDashboardTab] = useState<'overview' | 'verification' | 'my-jobs' | 'applications' | 'admin' | 'profile'>('overview');
+  const [dashboardTab, setDashboardTab] = useState<'overview' | 'verification' | 'my-jobs' | 'applications' | 'revenue' | 'admin' | 'profile'>('overview');
   const [showGeneralLoginModal, setShowGeneralLoginModal] = useState(false);
   const [modalActiveTab, setModalActiveTab] = useState<'login' | 'signup'>('login');
   const [modalPreselectedRole, setModalPreselectedRole] = useState<'candidate' | 'employer'>('candidate');
@@ -580,6 +581,7 @@ export default function App() {
     proposedPrice: number;
     delay: string;
     message: string;
+    quote?: Quote;
   }) => {
     if (!user || !applyingJob) return;
     try {
@@ -590,6 +592,7 @@ export default function App() {
         proposedPrice: data.proposedPrice,
         delay: data.delay,
         message: data.message,
+        quote: data.quote,
       });
 
       if (profile) {

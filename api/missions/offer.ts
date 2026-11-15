@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { z } from 'zod';
 import { HttpError, MISSION_STATUS, authenticate, db, readBody, sanitizeText } from '../_lib/server.js';
 import { initialProposal } from '../_lib/negotiation.js';
+import { parseQuote, quoteProblem, quoteTotal } from '../_lib/quote.js';
 
 /**
  * Envoi d'une offre (devis) par un artisan. Écrite par le serveur : l'identité de l'artisan
@@ -12,11 +13,24 @@ const CATEGORIES = ['plomberie', 'electricite', 'climatisation', 'peinture', 'me
 
 const Schema = z.object({
   missionId: z.string().min(1).max(64),
-  proposedPrice: z.number().int().min(500).max(10_000_000),
+  // Ignoré quand un devis détaillé est fourni (le total du devis fait foi) ; sinon au moins 500 FCFA (vérifié plus bas).
+  proposedPrice: z.number().int().min(0).max(10_000_000),
   delay: z.string().trim().min(1).max(120),
   message: z.string().trim().max(1000).optional(),
   experienceYears: z.number().int().min(0).max(60).default(0),
   artisanName: z.string().trim().min(1).max(80),
+  /** Devis détaillé facultatif : le total est recalculé ici et devient le prix de l'offre. */
+  quote: z.object({
+    lines: z.array(z.object({
+      label: z.string().max(200),
+      qty: z.number().min(0).max(100000),
+      unit: z.string().max(20).optional(),
+      unitPrice: z.number().min(0).max(10_000_000),
+    })).min(1).max(30),
+    discount: z.number().min(0).max(10_000_000).optional(),
+    validityDays: z.number().min(1).max(90).optional(),
+    conditions: z.string().max(1000).optional(),
+  }).optional(),
 });
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -27,6 +41,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const parsed = Schema.safeParse(readBody(req));
     if (!parsed.success) return res.status(400).json({ error: 'Données invalides : vérifiez le prix et le délai.' });
     const input = parsed.data;
+
+    if (!input.quote && input.proposedPrice < 500) return res.status(400).json({ error: 'Données invalides : vérifiez le prix et le délai.' });
 
     const mission = await db.get('jobs', input.missionId);
     if (mission.status !== MISSION_STATUS.OPEN) throw new HttpError(409, "Cette mission n'accepte plus d'offres.");
@@ -44,6 +60,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       trades = (Array.isArray(profile.trades) ? profile.trades : []).filter((t: unknown) => typeof t === 'string' && (CATEGORIES as readonly string[]).includes(t)).slice(0, 6);
     } catch { /* profil absent */ }
 
+    // Devis détaillé : le serveur recalcule le total (le prix envoyé par le navigateur est ignoré).
+    let price = input.proposedPrice;
+    let quoteJson: string | null = null;
+    if (input.quote) {
+      const quote = parseQuote(input.quote);
+      const problem = quoteProblem(quote);
+      if (problem) throw new HttpError(400, problem);
+      price = quoteTotal(quote!);
+      quoteJson = JSON.stringify(quote);
+    }
+
     const doc = await db.create(
       'applications',
       'unique()',
@@ -55,7 +82,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         photoURL,
         trades,
         experienceYears: input.experienceYears,
-        ...initialProposal(input.proposedPrice, new Date().toISOString()),
+        ...initialProposal(price, new Date().toISOString()),
+        quote: quoteJson,
         delay: sanitizeText(input.delay, 120),
         message: sanitizeText(input.message, 1000),
         status: 'pending',

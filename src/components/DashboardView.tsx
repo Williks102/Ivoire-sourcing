@@ -33,6 +33,7 @@ import { CITIES, CATEGORIES, MISSION_STATUS_LABELS, formatFcfa } from '../consta
 import { ClientMissionsPanel, ArtisanMissionsPanel } from './MissionsPanel';
 import { ArtisanProfileFields } from './ArtisanProfileFields';
 import { OutreachModal } from './OutreachModal';
+import { ArtisanRevenuePanel } from './ArtisanRevenuePanel';
 import { toWhatsAppNumber } from '../lib/phone';
 
 enum OperationType {
@@ -71,7 +72,7 @@ function handleAppwriteError(error: unknown, operationType: OperationType, path:
 interface DashboardViewProps {
   profile: UserProfile | null;
   user: any | null;
-  activeTab: 'overview' | 'verification' | 'my-jobs' | 'applications' | 'admin' | 'profile';
+  activeTab: 'overview' | 'verification' | 'my-jobs' | 'applications' | 'revenue' | 'admin' | 'profile';
   setActiveTab: (tab: any) => void;
   onProfileUpdate: (p: UserProfile) => void;
   setView: (v: any) => void;
@@ -145,6 +146,8 @@ export function DashboardView({
   const [editExperience, setEditExperience] = useState<number>(profile?.experienceYears || 0);
   const [editServiceCities, setEditServiceCities] = useState<string[]>(profile?.serviceCities || []);
   const [editWhatsapp, setEditWhatsapp] = useState<boolean>(profile?.whatsappConsent === true);
+  const [editBusinessName, setEditBusinessName] = useState(profile?.businessName || '');
+  const [editBusinessReg, setEditBusinessReg] = useState(profile?.businessRegistration || '');
   const [outreachJob, setOutreachJob] = useState<JobPost | null>(null);
   const [editPhone, setEditPhone] = useState(profile?.phone || '');
   const [profileCvFile, setProfileCvFile] = useState<{ name: string; content?: string } | null>(
@@ -400,6 +403,8 @@ export function DashboardView({
               trades: editTrades,
               experienceYears: editExperience,
               serviceCities: editServiceCities,
+              businessName: editBusinessName.trim() || undefined,
+              businessRegistration: editBusinessReg.trim() || undefined,
               whatsappConsent: editWhatsapp,
               whatsappConsentAt: editWhatsapp ? (profile.whatsappConsent ? profile.whatsappConsentAt : new Date().toISOString()) : undefined,
             }
@@ -1175,6 +1180,7 @@ export function DashboardView({
     { id: 'profile', label: "Mon Profil", icon: <UserIcon className="h-4 w-4" />, roles: ['candidate', 'employer', 'admin'] },
     { id: 'my-jobs', label: "Mes missions", icon: <BarChart3 className="h-4 w-4" />, roles: ['employer'] },
     { id: 'applications', label: "Mes missions & offres", icon: <Briefcase className="h-4 w-4" />, roles: ['candidate'] },
+    { id: 'revenue', label: "Mes revenus", icon: <BarChart3 className="h-4 w-4" />, roles: ['candidate'] },
     { id: 'verification', label: "Certification", icon: <ShieldCheck className="h-4 w-4" />, roles: ['candidate'] },
     { id: 'admin', label: "Système Admin", icon: <Settings className="h-4 w-4" />, roles: ['admin'] },
   ];
@@ -1439,6 +1445,10 @@ export function DashboardView({
 
            {activeTab === 'my-jobs' && profile.role === 'employer' && (
               <ClientMissionsPanel clientId={profile.uid} onPublish={() => setView('post-job')} />
+           )}
+
+           {activeTab === 'revenue' && profile.role === 'candidate' && (
+              <ArtisanRevenuePanel artisanId={profile.uid} />
            )}
 
            {activeTab === 'applications' && profile.role === 'candidate' && (
@@ -2256,6 +2266,8 @@ export function DashboardView({
                                   experience={editExperience} setExperience={setEditExperience}
                                   serviceCities={editServiceCities} setServiceCities={setEditServiceCities}
                                   whatsappConsent={editWhatsapp} setWhatsappConsent={setEditWhatsapp}
+                                  businessName={editBusinessName} setBusinessName={setEditBusinessName}
+                                  businessRegistration={editBusinessReg} setBusinessRegistration={setEditBusinessReg}
                                 />
                              )}
 
