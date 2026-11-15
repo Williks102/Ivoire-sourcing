@@ -28,6 +28,7 @@ export const where = (field: string, op: string, value: any): string => {
   }
 };
 export const limit = (count: number): string => Query.limit(count);
+export const orderDesc = (field: string): string => Query.orderDesc(field);
 export const query = (ref: CompatCollectionRef, ...queries: string[]): CompatQuery => ({ collectionId: ref.collectionId, queries });
 
 const normalizeData = (document: any) => {

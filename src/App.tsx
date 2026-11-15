@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   PlusCircle, 
@@ -75,6 +75,9 @@ export default function App() {
     }, 6000);
   };
 
+  const profileRef = useRef<UserProfile | null>(null);
+  profileRef.current = profile;
+
   // Register Toast trigger Globally
   useEffect(() => {
     (window as any).addToast = addToast;
@@ -85,16 +88,41 @@ export default function App() {
   useEffect(() => {
     if (!APPWRITE_CONFIG.DATABASE_ID) return;
 
+    // L'écoute est créée une seule fois : on lit le profil courant via une référence.
+    const me = () => profileRef.current;
+    const isMine = (payload: any) => !!me() && (me()!.role === 'admin' || payload?.employerId === me()!.uid || payload?.assignedArtisanId === me()!.uid);
+
     const unsubscribeJobs = client.subscribe(
       `databases.${APPWRITE_CONFIG.DATABASE_ID}.collections.jobs.documents`,
       (event) => {
         const payload = event.payload as any;
-        if (event.events.some(e => e.endsWith('.update')) && payload?.status === 'approved') {
-          addToast(`⚡ Annonce validée : "${payload.title || 'Nouvelle annonce'}" est maintenant en ligne !`, 'success');
+        const isCreate = event.events.some(e => e.endsWith('.create'));
+        const isUpdate = event.events.some(e => e.endsWith('.update'));
+        // Nouvelle mission en attente de modération : prévenir l'administration.
+        if (isCreate && payload?.status === 'pending' && me()?.role === 'admin') {
+          addToast(`🆕 Mission à valider : "${payload.title || 'Nouvelle mission'}"`, 'info');
+        }
+        if (isUpdate && payload?.status === 'approved') {
+          if (isMine(payload)) addToast(`⚡ Mission validée : "${payload.title || 'Nouvelle mission'}" est maintenant en ligne !`, 'success');
           fetchJobs();
         }
-        if (event.events.some(e => e.endsWith('.update')) && payload?.status === 'paid') {
+        if (isUpdate && payload?.status === 'paid' && isMine(payload)) {
           addToast(`💳 Paiement reçu pour la mission "${payload.title || ''}".`, 'success');
+        }
+      }
+    );
+
+    // Nouvelle offre d'artisan : prévenir le client concerné et l'administration (le temps réel respecte les droits de lecture).
+    const unsubscribeOffers = client.subscribe(
+      `databases.${APPWRITE_CONFIG.DATABASE_ID}.collections.applications.documents`,
+      (event) => {
+        if (!event.events.some(e => e.endsWith('.create'))) return;
+        const payload = event.payload as any;
+        const current = me();
+        if (!current || payload?.candidateId === current.uid) return;
+        if (current.role === 'admin' || payload?.employerId === current.uid) {
+          const price = payload?.proposedPrice ? ` — ${Math.round(payload.proposedPrice).toLocaleString('fr-FR')} FCFA` : '';
+          addToast(`📩 Nouvelle offre de ${payload?.candidateName || 'un artisan'}${price}`, 'success');
         }
       }
     );
@@ -111,6 +139,7 @@ export default function App() {
 
     return () => {
       unsubscribeJobs();
+      unsubscribeOffers();
       unsubscribeUsers();
     };
   }, []);

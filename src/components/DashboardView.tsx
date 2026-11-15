@@ -26,9 +26,10 @@ import {
   Eye,
   Paperclip
 } from 'lucide-react';
-import { db, auth, doc, setDoc, getDoc, deleteDoc, collection, query, where, limit, getDocs, signOut, getIsBackendAvailable } from '../lib/appwriteBackend';
+import { db, auth, doc, setDoc, getDoc, deleteDoc, collection, query, where, limit, orderDesc, getDocs, signOut, getIsBackendAvailable } from '../lib/appwriteBackend';
+import { missionService, AdminPayment } from '../services/missionService';
 import { UserProfile, JobPost, Application, UserRole } from '../types';
-import { CITIES, CATEGORIES, MISSION_STATUS_LABELS } from '../constants';
+import { CITIES, CATEGORIES, MISSION_STATUS_LABELS, formatFcfa } from '../constants';
 import { ClientMissionsPanel, ArtisanMissionsPanel } from './MissionsPanel';
 import { ArtisanProfileFields } from './ArtisanProfileFields';
 
@@ -73,6 +74,18 @@ interface DashboardViewProps {
   onProfileUpdate: (p: UserProfile) => void;
   setView: (v: any) => void;
   onLogout: () => void;
+}
+
+function TodoSection({ title, count, empty, info, children }: { title: string; count: number; empty: string; info?: boolean; children: React.ReactNode }) {
+  return (
+    <section className="bg-white border border-slate-100 rounded-[28px] shadow-sm overflow-hidden">
+      <header className="px-6 py-4 border-b border-slate-50 flex items-center justify-between">
+        <h3 className="font-bold text-slate-800 text-sm">{title}</h3>
+        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black ${count === 0 ? 'bg-slate-100 text-slate-400' : info ? 'bg-violet-50 text-violet-600' : 'bg-rose-50 text-rose-600'}`}>{count}</span>
+      </header>
+      {count === 0 ? <p className="px-6 py-5 text-xs text-slate-400">{empty}</p> : <div className="divide-y divide-slate-50">{children}</div>}
+    </section>
+  );
 }
 
 export function DashboardView({
@@ -141,7 +154,13 @@ export function DashboardView({
   const getJobStatusLabel = (status: string) => MISSION_STATUS_LABELS[status] || { text: status, color: 'bg-slate-100 text-slate-500' };
 
   // Admin Sub-Tab State ('users' | 'jobs' | 'applications')
-  const [adminTab, setAdminTab] = useState<'users' | 'jobs' | 'applications'>('users');
+  const [adminTab, setAdminTab] = useState<'todo' | 'users' | 'jobs' | 'applications' | 'payments'>('todo');
+  const [adminLimit, setAdminLimit] = useState(100);
+  const [payments, setPayments] = useState<AdminPayment[]>([]);
+  const [paymentsTotal, setPaymentsTotal] = useState(0);
+  const [paymentsLoading, setPaymentsLoading] = useState(false);
+  const [payoutRef, setPayoutRef] = useState<Record<string, string>>({});
+  const [payoutBusy, setPayoutBusy] = useState('');
 
   // Admin creations states
   const [isAdminCreatingUser, setIsAdminCreatingUser] = useState(false);
@@ -610,6 +629,13 @@ export function DashboardView({
 
   // ADMIN CONTROLS: Moderate Job Post (Approve/Reject)
   const updateJobStatus = async (jobId: string, newStatus: 'approved' | 'rejected' | 'closed') => {
+    // Seules les missions en modération, ouvertes ou refusées peuvent être modifiées : jamais une mission en cours, terminée ou payée.
+    const current = myJobs.find(j => j.id === jobId);
+    const allowed: Record<string, string[]> = { pending: ['approved', 'rejected'], approved: ['closed', 'rejected'], rejected: ['approved'] };
+    if (current && !(allowed[current.status] || []).includes(newStatus)) {
+      showNotification("Cette mission est en cours, terminée ou payée : son statut ne peut plus être modifié ici.", "error");
+      return;
+    }
     const isDemoMode = import.meta.env.DEV && (profile.uid?.startsWith('demo-') ?? false);
     try {
       if (isDemoMode) {
@@ -646,11 +672,34 @@ export function DashboardView({
     }
   };
 
+  // ADMIN : marquer un reversement à l'artisan comme effectué (via le serveur)
+  const markPayoutSent = async (missionId: string) => {
+    setPayoutBusy(missionId);
+    try {
+      await missionService.adminMarkPayoutSent(missionId, payoutRef[missionId]);
+      setMyJobs(prev => prev.map(j => (j.id === missionId ? { ...j, payoutStatus: 'sent' } : j)));
+      showNotification('Reversement marqué comme effectué.', 'success');
+    } catch (e: any) {
+      showNotification(e?.message || 'Action impossible.', 'error');
+    } finally {
+      setPayoutBusy('');
+    }
+  };
+
   // ADMIN CONTROLS: Delete/Dismiss Job Post
   const deleteJobAction = async (jobId: string) => {
+    const current = myJobs.find(j => j.id === jobId);
+    if (current && ['assigned', 'completed', 'paid'].includes(current.status)) {
+      showNotification("Impossible de supprimer une mission en cours, terminée ou payée (elle porte un prix convenu ou un paiement).", "error");
+      return;
+    }
+    if (current && current.status === 'approved' && apps.some(a => a.jobId === jobId)) {
+      showNotification("Cette mission a déjà reçu des offres : clôturez-la plutôt que de la supprimer.", "error");
+      return;
+    }
     setConfirmation({
-      title: "Supprimer l'offre",
-      message: "Êtes-vous sûr de vouloir supprimer cette annonce définitivement ?",
+      title: "Supprimer la mission",
+      message: "Êtes-vous sûr de vouloir supprimer cette mission définitivement ?",
       onConfirm: async () => {
         const isDemoMode = import.meta.env.DEV && (profile.uid?.startsWith('demo-') ?? false);
         try {
@@ -678,6 +727,11 @@ export function DashboardView({
 
   // ADMIN CONTROLS: Delete application record
   const deleteApplicationAction = async (appId: string) => {
+    const current = apps.find(a => a.id === appId);
+    if (current && (current.status === 'accepted' || current.status === 'approved')) {
+      showNotification("Cette offre a été retenue : elle porte le prix convenu de la mission et ne peut pas être supprimée.", "error");
+      return;
+    }
     setConfirmation({
       title: "Supprimer l'offre",
       message: "Êtes-vous sûr de vouloir supprimer cette offre de la plateforme ?",
@@ -864,15 +918,15 @@ export function DashboardView({
         }
 
         if (profile.role === 'admin') {
-          const qUsers = query(collection(db, 'users'), limit(100));
+          const qUsers = query(collection(db, 'users'), orderDesc('$createdAt'), limit(adminLimit));
           const snapUsers = await getDocs(qUsers);
           setAllUsers(snapUsers.docs.map(d => d.data() as UserProfile));
 
-          const qJobs = query(collection(db, 'jobs'), limit(100));
+          const qJobs = query(collection(db, 'jobs'), orderDesc('$createdAt'), limit(adminLimit));
           const snapJobs = await getDocs(qJobs);
           setMyJobs(snapJobs.docs.map(d => ({ id: d.id, ...d.data() } as JobPost)));
 
-          const qApps = query(collection(db, 'applications'), limit(100));
+          const qApps = query(collection(db, 'applications'), orderDesc('$createdAt'), limit(adminLimit));
           const snapApps = await getDocs(qApps);
           setApps(snapApps.docs.map(d => ({ id: d.id, ...d.data() } as Application)));
         }
@@ -1005,7 +1059,25 @@ export function DashboardView({
     };
 
     fetchData();
-  }, [user, profile, activeTab]);
+  }, [user, profile, activeTab, adminLimit]);
+
+  // Paiements (admin) : la table n'est accessible que par le serveur.
+  const loadPayments = async () => {
+    setPaymentsLoading(true);
+    try {
+      const res = await missionService.adminListPayments(0);
+      setPayments(res.payments);
+      setPaymentsTotal(res.total);
+    } catch (err: any) {
+      console.error('[ADMIN] paiements indisponibles', err);
+    } finally {
+      setPaymentsLoading(false);
+    }
+  };
+  useEffect(() => {
+    const demo = import.meta.env.DEV && (profile?.uid?.startsWith('demo-') ?? false);
+    if (profile?.role === 'admin' && activeTab === 'admin' && !demo) loadPayments();
+  }, [profile?.role, activeTab, adminTab]);
 
   const viewCandidate = async (candidateId: string, app?: Application) => {
     // Les coordonnées d'un artisan ne sont visibles que de l'administration : les clients passent par la plateforme.
@@ -1057,6 +1129,27 @@ export function DashboardView({
        <button onClick={() => window.location.reload()} className="mt-4 text-emerald-600 font-bold text-sm">Actualiser la page</button>
     </div>
   );
+
+  const userName = (id?: string) => allUsers.find(u => u.uid === id)?.displayName || (id ? `Compte ${id.slice(0, 6)}` : '—');
+  const categoryName = (id: string) => CATEGORIES.find(c => c.id === id)?.label || id;
+  const jobTitle = (id: string) => myJobs.find(j => j.id === id)?.title || resolvedJobs[id] || `Mission ${id.slice(0, 6)}`;
+  const pendingMissions = myJobs.filter(j => j.status === 'pending');
+  const unpaidMissions = myJobs.filter(j => j.status === 'completed');
+  const payoutsToDo = myJobs.filter(j => j.status === 'paid' && j.payoutStatus !== 'sent');
+  const pendingCertifs = allUsers.filter(u => (u.verificationDocs || []).some(d => d.status === 'pending'));
+  const adminTodoCount = pendingMissions.length + payoutsToDo.length + pendingCertifs.length;
+  const offerLabel = (status: string) =>
+    status === 'accepted' || status === 'approved'
+      ? { text: 'Retenue', color: 'bg-emerald-50 text-emerald-600' }
+      : status === 'rejected'
+        ? { text: 'Non retenue', color: 'bg-rose-50 text-rose-600' }
+        : { text: 'En attente', color: 'bg-amber-50 text-amber-600' };
+  const paidTotals = {
+    collected: payments.filter(p => p.status === 'success').reduce((n, p) => n + (p.amount || 0), 0),
+    commissions: payments.filter(p => p.status === 'success').reduce((n, p) => n + (p.commission || 0), 0),
+    toPayOut: payoutsToDo.reduce((n, j) => n + (j.artisanPayout || 0), 0),
+    paidOut: myJobs.filter(j => j.payoutStatus === 'sent').reduce((n, j) => n + (j.artisanPayout || 0), 0),
+  };
 
   const menuItems = [
     { id: 'overview', label: "Aperçu", icon: <LayoutDashboard className="h-4 w-4" />, roles: ['candidate', 'employer', 'admin'] },
@@ -1168,8 +1261,8 @@ export function DashboardView({
                       <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm relative overflow-hidden group hover:shadow-md transition-shadow">
                          <div className="absolute -right-4 -top-4 w-20 h-20 bg-emerald-50 rounded-full transition-transform group-hover:scale-125"></div>
                          <p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.15em] mb-4 relative z-10 font-sans">Missions en ligne</p>
-                         <h3 className="text-3xl font-black text-slate-900 relative z-10 font-sans">{myJobs.length}</h3>
-                         <p className="text-[10px] text-slate-400 mt-2 font-medium">Missions ouvertes</p>
+                         <h3 className="text-3xl font-black text-slate-900 relative z-10 font-sans">{myJobs.filter(j => j.status === 'approved').length}</h3>
+                         <p className="text-[10px] text-slate-400 mt-2 font-medium">Missions ouvertes aux offres</p>
                       </div>
 
                       <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm relative overflow-hidden group hover:shadow-md transition-shadow">
@@ -1179,15 +1272,15 @@ export function DashboardView({
                          <p className="text-[10px] text-slate-400 mt-2 font-medium">Mises en relation</p>
                       </div>
 
-                      <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm relative overflow-hidden group hover:shadow-md transition-shadow">
+                      <button onClick={() => { setAdminTab('todo'); setActiveTab('admin'); }} className="text-left bg-white p-6 rounded-3xl border border-slate-100 shadow-sm relative overflow-hidden group hover:shadow-md transition-shadow">
                          <div className="absolute -right-4 -top-4 w-20 h-20 bg-purple-50 rounded-full transition-transform group-hover:scale-125"></div>
-                         <p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.15em] mb-4 relative z-10 font-sans">Console système</p>
+                         <p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.15em] mb-4 relative z-10 font-sans">À traiter</p>
                          <div className="flex items-center gap-2 relative z-10">
-                            <h3 className="text-lg font-black text-purple-600">ACTIVE</h3>
-                            <CheckCircle2 className="h-4 w-4 text-purple-600" />
+                            <h3 className={`text-3xl font-black ${adminTodoCount > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{adminTodoCount}</h3>
+                            {adminTodoCount === 0 && <CheckCircle2 className="h-4 w-4 text-emerald-600" />}
                           </div>
-                          <p className="text-[10px] text-slate-400 mt-2 font-medium">Privilèges Administrateur</p>
-                       </div>
+                          <p className="text-[10px] text-slate-400 mt-2 font-medium">Missions à valider, reversements, certifications</p>
+                       </button>
                     </div>
                 ) : (
                    <>
@@ -1248,7 +1341,7 @@ export function DashboardView({
                               <p className="text-xs text-slate-400 font-medium">Aucun mouvement récent détecté.</p>
                            </div>
                          ) : (
-                           apps.slice(0, 4).map(app => (
+                           [...apps].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 4).map(app => (
                              <div key={app.id} className="flex gap-4 group/item">
                                 <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 transition-transform group-hover/item:scale-110 ${app.status === 'approved' ? 'bg-emerald-50 text-emerald-600' : app.status === 'rejected' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'}`}>
                                    {app.status === 'approved' ? <CheckCircle2 className="h-5 w-5" /> : app.status === 'rejected' ? <X className="h-5 w-5" /> : <Clock className="h-5 w-5" />}
@@ -1265,11 +1358,11 @@ export function DashboardView({
                                       >
                                          {profile.role === 'candidate' 
                                            ? (resolvedJobs[app.jobId] || `Offre ${app.jobId.substring(0,8)}...`) 
-                                           : (resolvedNames[app.candidateId] || `Artisan ${app.candidateId.substring(0,6)}`)}
+                                           : (app.candidateName || resolvedNames[app.candidateId] || `Artisan ${app.candidateId.substring(0,6)}`)}
                                       </p>
                                       <span className="text-[9px] text-slate-300 font-bold uppercase">{new Date(app.createdAt).toLocaleDateString()}</span>
                                    </div>
-                                   <p className="text-xs text-slate-500 font-medium leading-relaxed">Status mis à jour vers : <span className={`font-bold capitalize ${app.status === 'approved' ? 'text-emerald-600' : 'text-amber-500'}`}>{app.status}</span></p>
+                                   <p className="text-xs text-slate-500 font-medium leading-relaxed">{app.proposedPrice ? `Offre de ${formatFcfa(app.proposedPrice)}` : 'Offre'} — <span className={`font-bold ${offerLabel(app.status).color.split(' ')[1]}`}>{offerLabel(app.status).text}</span>{profile.role === 'admin' ? ` • ${jobTitle(app.jobId)}` : ''}</p>
                                 </div>
                              </div>
                            ))
@@ -1338,29 +1431,185 @@ export function DashboardView({
                  <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 border-b border-slate-50 pb-6">
                     <div>
                        <h2 className="text-2xl font-black text-slate-900 tracking-tight">Console d'Administration</h2>
-                       <p className="text-sm text-slate-400 font-medium">Contrôle de sécurité, modération des missions et validation de CNI.</p>
+                       <p className="text-sm text-slate-400 font-medium">Modération des missions, suivi des offres et des paiements, validation des pièces d'identité.</p>
                     </div>
-                    <div className="flex bg-slate-100 p-1 rounded-2xl shrink-0 self-start lg:self-center">
-                       <button 
-                         onClick={() => setAdminTab('users')}
-                         className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all ${adminTab === 'users' ? 'bg-white text-slate-800 shadow-md' : 'text-slate-500 hover:text-slate-800'}`}
-                       >
-                          Membres ({allUsers.length})
-                       </button>
-                       <button 
-                         onClick={() => setAdminTab('jobs')}
-                         className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all ${adminTab === 'jobs' ? 'bg-white text-slate-800 shadow-md' : 'text-slate-500 hover:text-slate-800'}`}
-                       >
-                          Offres ({myJobs.length})
-                       </button>
-                       <button 
-                         onClick={() => setAdminTab('applications')}
-                         className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all ${adminTab === 'applications' ? 'bg-white text-slate-800 shadow-md' : 'text-slate-500 hover:text-slate-800'}`}
-                       >
-                          Offres ({apps.length})
-                       </button>
+                    <div className="flex flex-wrap bg-slate-100 p-1 rounded-2xl shrink-0 self-start lg:self-center gap-1">
+                       {([
+                         ['todo', `À traiter${adminTodoCount ? ` (${adminTodoCount})` : ''}`],
+                         ['users', `Membres (${allUsers.length})`],
+                         ['jobs', `Missions (${myJobs.length})`],
+                         ['applications', `Offres (${apps.length})`],
+                         ['payments', 'Paiements'],
+                       ] as const).map(([id, label]) => (
+                         <button
+                           key={id}
+                           onClick={() => setAdminTab(id)}
+                           className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all ${adminTab === id ? 'bg-white text-slate-800 shadow-md' : 'text-slate-500 hover:text-slate-800'}`}
+                         >
+                            {label}
+                         </button>
+                       ))}
                     </div>
                  </header>
+
+                 {(adminTab === 'users' || adminTab === 'jobs' || adminTab === 'applications') && (allUsers.length >= adminLimit || myJobs.length >= adminLimit || apps.length >= adminLimit) && (
+                    <div className="text-center">
+                       <button onClick={() => setAdminLimit(n => n + 100)} className="px-5 py-2.5 rounded-xl text-xs font-bold bg-white border border-slate-200 text-slate-600 hover:border-emerald-300">Charger les 100 suivants</button>
+                    </div>
+                 )}
+
+                 {/* SUB TAB: À TRAITER */}
+                 {adminTab === 'todo' && (
+                    <div className="space-y-6">
+                       {adminTodoCount === 0 && unpaidMissions.length === 0 && (
+                         <div className="bg-emerald-50 border border-emerald-100 text-emerald-800 rounded-3xl p-6 text-sm font-bold flex items-center gap-3">
+                            <CheckCircle2 className="h-5 w-5" /> Rien à traiter pour le moment.
+                         </div>
+                       )}
+
+                       <TodoSection title="Missions à valider" count={pendingMissions.length} empty="Aucune mission en attente de modération.">
+                          {pendingMissions.map(job => (
+                            <div key={job.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                               <div className="min-w-0">
+                                  <p className="font-bold text-slate-800 text-sm truncate">{job.title}</p>
+                                  <p className="text-[11px] text-slate-400">{categoryName(job.category)} • {job.location} • {formatFcfa(job.budget)} • par {userName(job.employerId)}</p>
+                                  {job.description && <p className="text-xs text-slate-500 mt-1 line-clamp-2">{job.description}</p>}
+                               </div>
+                               <div className="flex gap-2 shrink-0">
+                                  <button onClick={() => updateJobStatus(job.id, 'approved')} className="px-3 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider bg-emerald-600 text-white hover:bg-emerald-700">Valider</button>
+                                  <button onClick={() => updateJobStatus(job.id, 'rejected')} className="px-3 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider bg-red-50 text-red-600 hover:bg-red-100 border border-red-100">Refuser</button>
+                               </div>
+                            </div>
+                          ))}
+                       </TodoSection>
+
+                       <TodoSection title="Reversements à faire aux artisans" count={payoutsToDo.length} empty="Aucun reversement en attente.">
+                          {payoutsToDo.map(job => (
+                            <div key={job.id} className="p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                               <div className="min-w-0">
+                                  <p className="font-bold text-slate-800 text-sm truncate">{job.title}</p>
+                                  <p className="text-[11px] text-slate-400">Artisan : <b className="text-slate-600">{userName(job.assignedArtisanId)}</b> • Payée le {job.paidAt ? new Date(job.paidAt).toLocaleDateString('fr-FR') : '—'}</p>
+                                  <p className="text-xs mt-1 text-slate-600">À reverser <b className="text-emerald-700">{formatFcfa(job.artisanPayout)}</b> <span className="text-slate-400">(prix {formatFcfa(job.agreedPrice)} − commission {formatFcfa(job.commissionAmount)})</span></p>
+                               </div>
+                               <div className="flex gap-2 shrink-0 items-center">
+                                  <input
+                                    value={payoutRef[job.id] || ''}
+                                    onChange={e => setPayoutRef(prev => ({ ...prev, [job.id]: e.target.value }))}
+                                    placeholder="Réf. du transfert (facultatif)"
+                                    className="bg-slate-50 px-3 py-2 rounded-xl text-xs outline-none focus:ring-1 focus:ring-emerald-500 w-44"
+                                  />
+                                  <button disabled={payoutBusy === job.id} onClick={() => markPayoutSent(job.id)} className="px-3 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider bg-slate-900 text-white hover:bg-emerald-600 disabled:opacity-50 whitespace-nowrap">
+                                     {payoutBusy === job.id ? 'Envoi…' : 'Reversement effectué'}
+                                  </button>
+                               </div>
+                            </div>
+                          ))}
+                       </TodoSection>
+
+                       <TodoSection title="Certifications en attente" count={pendingCertifs.length} empty="Aucun document en attente de vérification.">
+                          {pendingCertifs.map(u => (
+                            <div key={u.uid} className="p-4 flex items-center justify-between gap-3">
+                               <div className="min-w-0">
+                                  <p className="font-bold text-slate-800 text-sm truncate">{u.displayName}</p>
+                                  <p className="text-[11px] text-slate-400">{(u.verificationDocs || []).filter(d => d.status === 'pending').length} document(s) à vérifier</p>
+                               </div>
+                               <button onClick={() => setViewingDocsUser(u)} className="px-3 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider bg-slate-900 text-white hover:bg-emerald-600">Examiner</button>
+                            </div>
+                          ))}
+                       </TodoSection>
+
+                       <TodoSection title="Missions terminées, en attente de paiement du client" count={unpaidMissions.length} empty="Aucune mission en attente de paiement." info>
+                          {unpaidMissions.map(job => {
+                            const days = job.completedAt ? Math.floor((Date.now() - new Date(job.completedAt).getTime()) / 86400000) : 0;
+                            return (
+                              <div key={job.id} className="p-4 flex items-center justify-between gap-3">
+                                 <div className="min-w-0">
+                                    <p className="font-bold text-slate-800 text-sm truncate">{job.title}</p>
+                                    <p className="text-[11px] text-slate-400">Client : {userName(job.employerId)} • Artisan : {userName(job.assignedArtisanId)}</p>
+                                 </div>
+                                 <div className="text-right shrink-0">
+                                    <p className="font-black text-emerald-700 text-sm">{formatFcfa(job.agreedPrice)}</p>
+                                    <p className={`text-[10px] font-bold ${days >= 3 ? 'text-rose-600' : 'text-slate-400'}`}>terminée il y a {days} j</p>
+                                 </div>
+                              </div>
+                            );
+                          })}
+                       </TodoSection>
+                    </div>
+                 )}
+
+                 {/* SUB TAB: PAIEMENTS */}
+                 {adminTab === 'payments' && (
+                    <div className="space-y-6">
+                       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                          {[
+                            ['Encaissé', paidTotals.collected, 'text-slate-900'],
+                            ['Commissions', paidTotals.commissions, 'text-emerald-600'],
+                            ['À reverser', paidTotals.toPayOut, 'text-amber-600'],
+                            ['Déjà reversé', paidTotals.paidOut, 'text-slate-500'],
+                          ].map(([label, value, color]) => (
+                            <div key={label as string} className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm">
+                               <p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.15em] mb-2">{label}</p>
+                               <p className={`text-xl font-black ${color}`}>{formatFcfa(value as number)}</p>
+                            </div>
+                          ))}
+                       </div>
+
+                       <div className="bg-white border border-slate-100 rounded-[32px] overflow-hidden shadow-sm">
+                          <div className="overflow-x-auto">
+                             <table className="w-full text-left text-sm whitespace-nowrap">
+                                <thead className="bg-slate-50/75 border-b border-slate-100 text-[10px] uppercase font-bold text-slate-400">
+                                   <tr>
+                                      <th className="px-6 py-4">Date</th>
+                                      <th className="px-6 py-4">Mission</th>
+                                      <th className="px-6 py-4">Client → Artisan</th>
+                                      <th className="px-6 py-4">Montant</th>
+                                      <th className="px-6 py-4">Commission</th>
+                                      <th className="px-6 py-4">Part artisan</th>
+                                      <th className="px-6 py-4">Paiement</th>
+                                      <th className="px-6 py-4">Reversement</th>
+                                   </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                   {paymentsLoading && payments.length === 0 ? (
+                                     <tr><td colSpan={8} className="px-6 py-12 text-center text-slate-400 bg-slate-50/20">Chargement…</td></tr>
+                                   ) : payments.length === 0 ? (
+                                     <tr><td colSpan={8} className="px-6 py-12 text-center text-slate-400 font-medium bg-slate-50/20">Aucun paiement pour le moment.</td></tr>
+                                   ) : (
+                                     payments.map(pay => {
+                                       const job = myJobs.find(j => j.id === pay.jobId);
+                                       const payoutSent = job?.payoutStatus === 'sent';
+                                       return (
+                                         <tr key={pay.id} className="hover:bg-slate-50/50 transition-colors">
+                                            <td className="px-6 py-4 text-xs text-slate-500">{new Date(pay.paidAt || pay.createdAt).toLocaleDateString('fr-FR')}</td>
+                                            <td className="px-6 py-4 text-xs font-bold text-slate-800">{jobTitle(pay.jobId)}<p className="text-[10px] text-slate-400 font-mono font-normal">{pay.reference}</p></td>
+                                            <td className="px-6 py-4 text-xs text-slate-600">{userName(pay.employerId)} → {userName(pay.artisanId)}</td>
+                                            <td className="px-6 py-4 text-xs font-bold text-slate-800">{formatFcfa(pay.amount)}</td>
+                                            <td className="px-6 py-4 text-xs font-bold text-emerald-600">{formatFcfa(pay.commission)}</td>
+                                            <td className="px-6 py-4 text-xs text-slate-700">{formatFcfa(pay.payout)}</td>
+                                            <td className="px-6 py-4">
+                                               <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider ${pay.status === 'success' ? 'bg-emerald-50 text-emerald-600' : pay.status === 'initiated' ? 'bg-amber-50 text-amber-600' : 'bg-rose-50 text-rose-600'}`}>
+                                                  {pay.status === 'success' ? 'Payé' : pay.status === 'initiated' ? 'En cours' : pay.status === 'mismatch' ? 'Montant incohérent' : 'Échoué'}
+                                               </span>
+                                            </td>
+                                            <td className="px-6 py-4">
+                                               {pay.status !== 'success' ? <span className="text-slate-300">—</span> : (
+                                                 <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider ${payoutSent ? 'bg-slate-100 text-slate-500' : 'bg-amber-50 text-amber-600'}`}>
+                                                    {payoutSent ? 'Effectué' : 'À faire'}
+                                                 </span>
+                                               )}
+                                            </td>
+                                         </tr>
+                                       );
+                                     })
+                                   )}
+                                </tbody>
+                             </table>
+                          </div>
+                       </div>
+                       {paymentsTotal > payments.length && <p className="text-[11px] text-slate-400 text-center">{payments.length} paiements affichés sur {paymentsTotal}.</p>}
+                    </div>
+                 )}
 
                  {/* SUB TAB: USERS */}
                  {adminTab === 'users' && (
@@ -1592,8 +1841,8 @@ export function DashboardView({
                      <div className="space-y-6">
                         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-5 rounded-3xl border border-slate-100 shadow-sm gap-4 font-sans">
                            <div>
-                              <h3 className="font-bold text-slate-850 text-sm">Gestion des offres</h3>
-                              <p className="text-xs text-slate-400">Publier des offres en direct, modérer ou supprimer les annonces.</p>
+                              <h3 className="font-bold text-slate-850 text-sm">Gestion des missions</h3>
+                              <p className="text-xs text-slate-400">Publier des missions en direct, modérer ou supprimer les annonces.</p>
                            </div>
                            <button 
                              onClick={() => setIsAdminCreatingJob(!isAdminCreatingJob)}
@@ -1707,10 +1956,11 @@ export function DashboardView({
                              <table className="w-full text-left text-sm whitespace-nowrap">
                                 <thead className="bg-slate-50/75 border-b border-slate-100 text-[10px] uppercase font-bold text-slate-400">
                                    <tr>
-                                      <th className="px-6 py-4">Titre de l'Offre</th>
-                                      <th className="px-6 py-4">Ville</th>
-                                      <th className="px-6 py-4">Catégorie</th>
-                                      <th className="px-6 py-4">Salaire Mensuel</th>
+                                      <th className="px-6 py-4">Mission</th>
+                                      <th className="px-6 py-4">Client</th>
+                                      <th className="px-6 py-4">Métier / Ville</th>
+                                      <th className="px-6 py-4">Budget / Prix convenu</th>
+                                      <th className="px-6 py-4">Artisan retenu</th>
                                       <th className="px-6 py-4">Statut</th>
                                       <th className="px-6 py-4 text-right">Actions</th>
                                    </tr>
@@ -1718,55 +1968,56 @@ export function DashboardView({
                                 <tbody className="divide-y divide-slate-100">
                                    {myJobs.length === 0 ? (
                                      <tr>
-                                       <td colSpan={6} className="px-6 py-12 text-center text-slate-400 font-medium bg-slate-50/20">Aucune mission publiée pour le moment.</td>
+                                       <td colSpan={7} className="px-6 py-12 text-center text-slate-400 font-medium bg-slate-50/20">Aucune mission publiée pour le moment.</td>
                                      </tr>
                                    ) : (
-                                     myJobs.map(job => (
+                                     myJobs.map(job => {
+                                       const locked = ['assigned', 'completed', 'paid'].includes(job.status);
+                                       return (
                                         <tr key={job.id} className="hover:bg-slate-50/50 transition-colors">
                                            <td className="px-6 py-4">
-                                              <div>
-                                                 <p className="font-bold text-slate-800 text-xs">{job.title}</p>
-                                                 <p className="text-[10px] text-slate-400 font-mono">ID: {job.id}</p>
-                                              </div>
+                                              <p className="font-bold text-slate-800 text-xs">{job.title}</p>
+                                              <p className="text-[10px] text-slate-400 font-mono">{new Date(job.createdAt).toLocaleDateString('fr-FR')} • {job.id.slice(0, 8)}</p>
                                            </td>
-                                           <td className="px-6 py-4 text-xs font-semibold text-slate-600">{job.location}</td>
-                                           <td className="px-6 py-4">
-                                              <span className="px-2 py-0.5 rounded-md text-[9px] font-bold uppercase bg-slate-100 text-slate-500">
-                                                 {job.category}
-                                              </span>
+                                           <td className="px-6 py-4 text-xs text-slate-600">{userName(job.employerId)}</td>
+                                           <td className="px-6 py-4 text-xs text-slate-600">
+                                              <span className="px-2 py-0.5 rounded-md text-[9px] font-bold uppercase bg-slate-100 text-slate-500">{categoryName(job.category)}</span>
+                                              <span className="ml-2">{job.location}</span>
                                            </td>
-                                           <td className="px-6 py-4 text-xs font-bold text-emerald-600">{job.budget ?? job.salaryRange} FCFA</td>
+                                           <td className="px-6 py-4 text-xs font-bold text-emerald-600">
+                                              {job.agreedPrice ? formatFcfa(job.agreedPrice) : formatFcfa(job.budget ?? job.salaryRange)}
+                                              {job.agreedPrice ? <span className="block text-[10px] font-normal text-slate-400">budget {formatFcfa(job.budget)}</span> : null}
+                                           </td>
+                                           <td className="px-6 py-4 text-xs text-slate-600">{job.assignedArtisanId ? userName(job.assignedArtisanId) : <span className="text-slate-300">—</span>}</td>
                                            <td className="px-6 py-4">
                                               <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider ${getJobStatusLabel(job.status).color}`}>
                                                  {getJobStatusLabel(job.status).text}
                                               </span>
+                                              {job.status === 'paid' && (
+                                                <span className="block text-[10px] mt-1 text-slate-400">Reversement : {job.payoutStatus === 'sent' ? 'effectué' : 'à faire'}</span>
+                                              )}
                                            </td>
-                                           <td className="px-6 py-4 text-right flex items-center justify-end gap-2">
-                                              {job.status !== 'approved' && (
-                                                <button 
-                                                  onClick={() => updateJobStatus(job.id, 'approved')}
-                                                  className="px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-all border border-emerald-100"
-                                                >
-                                                   Accepter
-                                                </button>
-                                              )}
-                                              {job.status !== 'rejected' && (
-                                                <button 
-                                                  onClick={() => updateJobStatus(job.id, 'rejected')}
-                                                  className="px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider bg-red-50 text-red-600 hover:bg-red-100 transition-all border border-red-100"
-                                                >
-                                                   Bloquer
-                                                </button>
-                                              )}
-                                              <button 
-                                                onClick={() => deleteJobAction(job.id)}
-                                                className="px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase bg-slate-50 text-slate-400 hover:bg-red-550 transition-all"
-                                              >
-                                                 Supprimer
-                                              </button>
+                                           <td className="px-6 py-4 text-right">
+                                              <div className="flex items-center justify-end gap-2">
+                                                {(job.status === 'pending' || job.status === 'rejected') && (
+                                                  <button onClick={() => updateJobStatus(job.id, 'approved')} className="px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-all border border-emerald-100">Valider</button>
+                                                )}
+                                                {job.status === 'pending' && (
+                                                  <button onClick={() => updateJobStatus(job.id, 'rejected')} className="px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider bg-red-50 text-red-600 hover:bg-red-100 transition-all border border-red-100">Refuser</button>
+                                                )}
+                                                {job.status === 'approved' && (
+                                                  <button onClick={() => updateJobStatus(job.id, 'closed')} className="px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-600 hover:bg-slate-200 transition-all">Clôturer</button>
+                                                )}
+                                                {locked ? (
+                                                  <span className="text-[10px] text-slate-300 font-bold uppercase">Verrouillée</span>
+                                                ) : (
+                                                  <button onClick={() => deleteJobAction(job.id)} className="px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase bg-slate-50 text-slate-400 hover:bg-red-50 hover:text-red-600 transition-all">Supprimer</button>
+                                                )}
+                                              </div>
                                            </td>
                                         </tr>
-                                     ))
+                                       );
+                                     })
                                    )}
                                 </tbody>
                              </table>
@@ -1784,69 +2035,53 @@ export function DashboardView({
                                 <thead className="bg-slate-50/75 border-b border-slate-100 text-[10px] uppercase font-bold text-slate-400">
                                    <tr>
                                       <th className="px-6 py-4">Artisan</th>
-                                      <th className="px-6 py-4">Mission concernée</th>
+                                      <th className="px-6 py-4">Mission / Client</th>
+                                      <th className="px-6 py-4">Prix proposé / Délai</th>
                                       <th className="px-6 py-4">Message</th>
-                                      <th className="px-6 py-4">État de la relation</th>
+                                      <th className="px-6 py-4">État</th>
                                       <th className="px-6 py-4 text-right">Actions</th>
                                    </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
                                    {apps.length === 0 ? (
                                      <tr>
-                                       <td colSpan={5} className="px-6 py-12 text-center text-slate-400 font-medium bg-slate-50/20">Aucune offre à afficher.</td>
+                                       <td colSpan={6} className="px-6 py-12 text-center text-slate-400 font-medium bg-slate-50/20">Aucune offre à afficher.</td>
                                      </tr>
                                    ) : (
-                                     apps.map(app => (
+                                     apps.map(app => {
+                                        const retained = app.status === 'accepted' || app.status === 'approved';
+                                        return (
                                         <tr key={app.id} className="hover:bg-slate-50/50 transition-colors">
                                            <td className="px-6 py-4">
-                                              <div className="font-bold text-slate-800 text-xs">
-                                                 {app.candidateName || resolvedNames[app.candidateId] || `Utilisateur : ${app.candidateId.substring(0,8)}`}
+                                              <div className="font-bold text-slate-800 text-xs">{app.candidateName || userName(app.candidateId)}</div>
+                                              <div className="flex flex-wrap gap-1 mt-1">
+                                                 {(app.trades || []).map(t => <span key={t} className="text-[9px] font-black uppercase tracking-wider bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">{categoryName(t)}</span>)}
+                                                 {app.experienceYears !== undefined && <span className="text-[9px] font-bold text-emerald-600">{app.experienceYears} an(s)</span>}
                                               </div>
                                            </td>
-                                           <td className="px-6 py-4 text-xs font-extrabold text-slate-600">
-                                              {resolvedJobs[app.jobId] || `Offre : ${app.jobId.substring(0,8)}`}
+                                           <td className="px-6 py-4 text-xs">
+                                              <p className="font-extrabold text-slate-700">{jobTitle(app.jobId)}</p>
+                                              <p className="text-[10px] text-slate-400">par {userName(app.employerId)} • {new Date(app.createdAt).toLocaleDateString('fr-FR')}</p>
                                            </td>
-                                           <td className="px-6 py-4 text-xs max-w-sm truncate text-slate-500 font-medium font-sans">
-                                              {app.message || '(Aucun message)'}{app.experienceYears !== undefined && <span className="ml-2 bg-emerald-50 text-emerald-600 text-[10px] px-1.5 py-0.5 rounded font-black">💼 {app.experienceYears} {app.experienceYears > 1 ? "ans" : "an"}</span>}{app.cvName && (
-                                                <span className="ml-2 bg-amber-50 text-amber-500 font-mono text-[9px] px-1.5 py-0.5 rounded font-bold inline-flex items-center gap-1">
-                                                  📄 CV: {app.cvName}
-                                                  {app.cvUrl && (
-                                                    <>
-                                                      <button 
-                                                        onClick={(e) => { e.stopPropagation(); setPreviewCv({ name: app.cvName!, url: app.cvUrl! }); }} 
-                                                        className="text-amber-800 hover:text-amber-950 cursor-pointer underline font-extrabold ml-1 scale-95"
-                                                      >
-                                                        [Visionner]
-                                                      </button>
-                                                      <a 
-                                                        href={app.cvUrl} 
-                                                        download={app.cvName} 
-                                                        onClick={(e) => e.stopPropagation()} 
-                                                        className="text-amber-800 hover:text-amber-950 cursor-pointer underline font-extrabold ml-1 scale-95"
-                                                      >
-                                                        [Télécharger]
-                                                      </a>
-                                                    </>
-                                                  )}
-                                                </span>
-                                              )}
+                                           <td className="px-6 py-4 text-xs">
+                                              <p className="font-black text-emerald-700">{app.proposedPrice ? formatFcfa(app.proposedPrice) : '—'}</p>
+                                              <p className="text-[10px] text-slate-400">{app.delay || 'Délai non précisé'}</p>
                                            </td>
+                                           <td className="px-6 py-4 text-xs max-w-xs truncate text-slate-500 font-medium">{app.message || '(Aucun message)'}</td>
                                            <td className="px-6 py-4">
-                                              <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider ${app.status === 'approved' || app.status === 'accepted' ? 'bg-emerald-50 text-emerald-600' : app.status === 'rejected' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'}`}>
-                                                 {app.status === 'pending' ? 'En attente' : app.status === 'approved' ? 'Acceptée' : 'Refusée'}
-                                              </span>
+                                              <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider ${offerLabel(app.status).color}`}>{offerLabel(app.status).text}</span>
                                            </td>
                                            <td className="px-6 py-4 text-right">
-                                              <button onClick={() => viewCandidate(app.candidateId, app)} className="mr-2 px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-800 hover:bg-emerald-100 transition-all border border-emerald-100 shrink-0">Voir Profil</button>
-                                              <button 
-                                                onClick={() => deleteApplicationAction(app.id)}
-                                                className="px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider bg-red-50 text-red-650 hover:bg-red-100 transition-all border border-red-100"
-                                              >
-                                                 Supprimer
-                                              </button>
+                                              <button onClick={() => viewCandidate(app.candidateId, app)} className="mr-2 px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-800 hover:bg-emerald-100 transition-all border border-emerald-100">Voir profil</button>
+                                              {retained ? (
+                                                <span className="text-[10px] text-slate-300 font-bold uppercase">Verrouillée</span>
+                                              ) : (
+                                                <button onClick={() => deleteApplicationAction(app.id)} className="px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider bg-red-50 text-red-600 hover:bg-red-100 transition-all border border-red-100">Supprimer</button>
+                                              )}
                                            </td>
                                         </tr>
-                                     ))
+                                        );
+                                     })
                                    )}
                                 </tbody>
                              </table>

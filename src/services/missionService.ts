@@ -4,6 +4,21 @@ import { authFetch } from '../lib/api';
 import { Application, JobPost } from '../types';
 
 const DB = APPWRITE_CONFIG.DATABASE_ID;
+
+export interface AdminPayment {
+  id: string;
+  reference: string;
+  jobId: string;
+  employerId: string;
+  artisanId: string;
+  amount: number;
+  commission: number;
+  payout: number;
+  channel: string;
+  status: 'initiated' | 'success' | 'failed' | 'mismatch';
+  createdAt: string;
+  paidAt?: string;
+}
 const withId = <T,>(doc: any) => ({ id: doc.$id, ...doc }) as T;
 
 export const missionService = {
@@ -78,6 +93,12 @@ export const missionService = {
       delay: input.delay,
       message: input.message,
     }),
+
+  // --- Administration (réservé au label admin, vérifié côté serveur) ---
+  adminListPayments: (offset = 0) =>
+    authFetch<{ payments: AdminPayment[]; total: number }>('/api/admin/payments', { action: 'list', offset }),
+  adminMarkPayoutSent: (missionId: string, reference?: string) =>
+    authFetch('/api/admin/payments', { action: 'markPayoutSent', missionId, reference }),
 
   // --- Transitions contrôlées par le serveur ---
   acceptOffer: (missionId: string, applicationId: string) =>
