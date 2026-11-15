@@ -19,12 +19,12 @@ export const authService = {
       
       // Gestion explicite des erreurs classiques d'Appwrite
       if (error.code === 409) {
-        throw new Error("Cette adresse email est déjà associée à un compte.");
+        throw Object.assign(new Error("Cette adresse email est déjà associée à un compte."), { code: 409 });
       }
       if (error.code === 400) {
-        throw new Error("Le mot de passe doit contenir au moins 8 caractères.");
+        throw Object.assign(new Error("Le mot de passe doit contenir au moins 8 caractères."), { code: 400 });
       }
-      throw new Error(error.message || "Une erreur est survenue lors de l'inscription.");
+      throw Object.assign(new Error(error.message || "Une erreur est survenue lors de l'inscription."), { code: error.code });
     }
   },
 
