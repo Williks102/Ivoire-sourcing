@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { HttpError, MISSION_STATUS, db, readBody, safeEqual } from './_lib/server.js';
+import { audit, clientIp, rateLimit, sendError } from './_lib/security.js';
 
 /**
  * Notification de la passerelle Paiement Pro.
@@ -15,6 +16,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
+    // Limitation par IP avant de comparer le secret (freine les essais répétés).
+    await rateLimit(`ip:webhook:${clientIp(req)}`, 300, 60);
     const expected = process.env.PAYMENT_WEBHOOK_SECRET;
     const token = Array.isArray(req.query.token) ? req.query.token[0] : req.query.token;
     if (!expected || !safeEqual(token, expected)) return res.status(401).json({ error: 'Unauthorized' });
@@ -31,12 +34,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (!SUCCESS.has(status)) {
       await db.update('payments', reference, { status: 'failed', gatewayStatus: status.slice(0, 40) });
+      await audit(req, 'gateway', 'payment.failed', reference, { status: status.slice(0, 40) });
       return res.status(200).json({ success: true, recorded: 'failed' });
     }
 
     // Si la passerelle renvoie un montant, il doit correspondre exactement à celui attendu.
     if (payload.amount !== undefined && Math.round(Number(payload.amount)) !== Number(payment.amount)) {
       await db.update('payments', reference, { status: 'mismatch', gatewayStatus: status.slice(0, 40) });
+      await audit(req, 'gateway', 'payment.mismatch', reference, { received: Number(payload.amount) || null, expected: Number(payment.amount) });
       console.error('[webhook] montant incohérent', reference, payload.amount, payment.amount);
       return res.status(400).json({ error: 'Montant incohérent.' });
     }
@@ -59,10 +64,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       payoutStatus: 'pending', // reversement à l'artisan à effectuer
     });
 
+    await audit(req, 'gateway', 'payment.success', reference, { mission: mission.$id, amount: payment.amount });
     return res.status(200).json({ success: true });
   } catch (error: any) {
-    if (error instanceof HttpError) return res.status(error.status).json({ error: error.message });
-    console.error('[webhook]', error?.message);
-    return res.status(500).json({ error: 'Erreur serveur.' });
+    return sendError(res, error, '[webhook]');
   }
 }

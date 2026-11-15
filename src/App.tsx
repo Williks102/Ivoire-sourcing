@@ -597,7 +597,7 @@ export default function App() {
 
       if (profile) {
         const updatedProfile = { ...profile, displayName: data.artisanName, phone: data.phone };
-        try { await databases.updateDocument(APPWRITE_CONFIG.DATABASE_ID, 'users', user.$id, { displayName: data.artisanName, phone: data.phone }); } catch (e) { console.warn('Profil non mis à jour:', e); }
+        try { await missionService.updateProfile({ displayName: data.artisanName, phone: data.phone }); } catch (e) { console.warn('Profil non mis à jour:', e); }
         setProfile(updatedProfile);
       }
 

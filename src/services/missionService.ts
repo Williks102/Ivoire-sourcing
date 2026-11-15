@@ -1,7 +1,7 @@
 import { Query } from 'appwrite';
 import { databases, APPWRITE_CONFIG } from '../lib/appwrite';
 import { authFetch } from '../lib/api';
-import { Application, JobPost } from '../types';
+import { Application, JobPost, UserProfile, VerificationDoc } from '../types';
 import { Quote } from '../lib/quote';
 
 const DB = APPWRITE_CONFIG.DATABASE_ID;
@@ -121,6 +121,14 @@ export const missionService = {
       message: input.message,
       quote: input.quote,
     }),
+
+  // --- Profil et pièces justificatives (écritures par le serveur uniquement) ---
+  ensureProfile: (role: 'employer' | 'candidate', displayName?: string) =>
+    authFetch<{ profile: UserProfile }>('/api/profile', { action: 'ensure', role, displayName }),
+  updateProfile: (fields: Partial<Pick<UserProfile, 'displayName' | 'bio' | 'location' | 'phone' | 'skills' | 'trades' | 'experienceYears' | 'serviceCities' | 'whatsappConsent' | 'businessName' | 'businessRegistration'>>) =>
+    authFetch<{ profile: UserProfile }>('/api/profile', { action: 'update', fields }),
+  uploadDoc: (type: VerificationDoc['type'], dataBase64: string) => authFetch<{ doc: VerificationDoc }>('/api/upload', { type, dataBase64 }),
+  fetchFile: (fileId: string) => authFetch<{ mime: string; ext: string; dataBase64: string }>('/api/files', { fileId }),
 
   // --- Modèles de devis de l'artisan (serveur : chacun ne voit que les siens) ---
   listQuoteTemplates: () => authFetch<{ templates: QuoteTemplate[]; max: number }>('/api/quotes', { action: 'list' }),

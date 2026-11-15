@@ -38,3 +38,7 @@ export const MISSION_STATUS_LABELS: Record<string, { text: string; color: string
   rejected: { text: 'Refusée', color: 'bg-rose-50 text-rose-600' },
   closed: { text: 'Clôturée', color: 'bg-slate-100 text-slate-500' },
 };
+
+/** Avatar par défaut embarqué (aucun service tiers : pas de fuite d'IP, compatible CSP). */
+export const AVATAR_PLACEHOLDER =
+  "data:image/svg+xml;utf8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" fill="#e2e8f0"/><circle cx="32" cy="24" r="11" fill="#94a3b8"/><path d="M10 58c2-14 12-20 22-20s20 6 22 20z" fill="#94a3b8"/></svg>');

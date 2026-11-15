@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { audit, protect, sendError } from '../_lib/security.js';
 import { z } from 'zod';
-import { HttpError, MISSION_STATUS, authenticate, db, readBody } from '../_lib/server.js';
+import { HttpError, MISSION_STATUS, db, readBody } from '../_lib/server.js';
 import { acceptOffer } from '../_lib/missions.js';
 
 /**
@@ -20,7 +21,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Méthode non autorisée' });
 
   try {
-    const user = await authenticate(req);
+    const user = await protect(req, { name: 'transition', max: 60, windowSec: 60 });
     const parsed = Schema.safeParse(readBody(req));
     if (!parsed.success) return res.status(400).json({ error: 'Données invalides' });
     const input = parsed.data;
@@ -32,6 +33,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (mission.employerId !== user.$id) throw new HttpError(403, "Seul le client qui a publié la mission peut accepter une offre.");
       const offer = await db.get('applications', input.applicationId);
       const { price } = await acceptOffer(user.$id, mission, offer, input.expectedPrice);
+      await audit(req, user.$id, 'mission.accept', mission.$id, { offer: offer.$id, price });
       return res.status(200).json({ success: true, status: MISSION_STATUS.ASSIGNED, agreedPrice: price });
     }
 
@@ -39,10 +41,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (mission.assignedArtisanId !== user.$id) throw new HttpError(403, "Seul l'artisan choisi peut déclarer la mission terminée.");
     if (mission.status !== MISSION_STATUS.ASSIGNED) throw new HttpError(409, "Cette mission n'est pas en cours.");
     await db.update('jobs', mission.$id, { status: MISSION_STATUS.COMPLETED, completedAt: new Date().toISOString() });
+    await audit(req, user.$id, 'mission.complete', mission.$id);
     return res.status(200).json({ success: true, status: MISSION_STATUS.COMPLETED });
   } catch (error: any) {
-    if (error instanceof HttpError) return res.status(error.status).json({ error: error.message });
-    console.error('[missions/transition]', error?.message);
-    return res.status(500).json({ error: 'Erreur serveur.' });
+    return sendError(res, error, '[missions/transition]');
   }
 }

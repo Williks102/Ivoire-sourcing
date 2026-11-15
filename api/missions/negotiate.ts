@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { audit, protect, sendError } from '../_lib/security.js';
 import { z } from 'zod';
-import { HttpError, MISSION_STATUS, authenticate, db, readBody, sanitizeText } from '../_lib/server.js';
+import { HttpError, MISSION_STATUS, db, readBody, sanitizeText } from '../_lib/server.js';
 import { acceptOffer } from '../_lib/missions.js';
 import { MAX_PRICE, MIN_PRICE, applyProposal, counterError, currentPrice, partyOf } from '../_lib/negotiation.js';
 
@@ -32,7 +33,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Méthode non autorisée' });
 
   try {
-    const user = await authenticate(req);
+    const user = await protect(req, { name: 'negotiate', max: 60, windowSec: 60 });
     const parsed = Schema.safeParse(readBody(req));
     if (!parsed.success) return res.status(400).json({ error: 'Données invalides : vérifiez le prix proposé.' });
     const input = parsed.data;
@@ -45,6 +46,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (input.action === 'accept') {
       const { price } = await acceptOffer(user.$id, mission, offer, input.expectedPrice);
+      await audit(req, user.$id, 'offer.accept', offer.$id, { mission: mission.$id, price, by: party });
       return res.status(200).json({ success: true, status: MISSION_STATUS.ASSIGNED, agreedPrice: price });
     }
 
@@ -53,6 +55,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (input.action === 'decline') {
       await db.update('applications', offer.$id, { status: party === 'client' ? 'rejected' : 'withdrawn' });
+      await audit(req, user.$id, 'offer.decline', offer.$id, { mission: mission.$id, by: party });
       return res.status(200).json({ success: true });
     }
 
@@ -65,10 +68,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const update = applyProposal(offer, party, input.price, sanitizeText(input.note, 200), new Date().toISOString());
     await db.update('applications', offer.$id, update);
+    await audit(req, user.$id, 'offer.counter', offer.$id, { mission: mission.$id, price: update.proposedPrice, by: party });
     return res.status(200).json({ success: true, price: update.proposedPrice, rounds: update.rounds });
   } catch (error: any) {
-    if (error instanceof HttpError) return res.status(error.status).json({ error: error.message });
-    console.error('[missions/negotiate]', error?.message);
-    return res.status(500).json({ error: 'Erreur serveur.' });
+    return sendError(res, error, '[missions/negotiate]');
   }
 }

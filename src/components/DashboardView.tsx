@@ -34,6 +34,9 @@ import { ClientMissionsPanel, ArtisanMissionsPanel } from './MissionsPanel';
 import { ArtisanProfileFields } from './ArtisanProfileFields';
 import { OutreachModal } from './OutreachModal';
 import { ArtisanRevenuePanel } from './ArtisanRevenuePanel';
+import { SecureDocPanel, SecureOpenButton } from './SecureDoc';
+import { prepareUpload } from '../lib/upload';
+import { AVATAR_PLACEHOLDER } from '../constants';
 import { QuotesPanel } from './QuotesPanel';
 import { toWhatsAppNumber } from '../lib/phone';
 
@@ -130,7 +133,6 @@ export function DashboardView({
     salaryRange: '',
     description: '',
   });
-  const [previewCv, setPreviewCv] = useState<{ name: string; url: string } | null>(null);
   const [confirmation, setConfirmation] = useState<{
     title: string;
     message: string;
@@ -193,9 +195,6 @@ export function DashboardView({
   });
 
   // ID Verification Upload Simulation State
-  const [idNumber, setIdNumber] = useState('');
-  const [isSubmittingID, setIsSubmittingID] = useState(false);
-  const [verificationFeedback, setVerificationFeedback] = useState('');
 
   // Real document upload states for Côte d'Ivoire Certification
   const [cniFile, setCniFile] = useState<{ name: string; base64: string; size: string } | null>(null);
@@ -419,45 +418,23 @@ export function DashboardView({
         setTimeout(() => setSuccessMsg(''), 4000);
         return;
       }
-      await setDoc(doc(db, 'users', profile.uid), updated, { merge: true });
-      onProfileUpdate(updated);
+      // Écriture par le serveur : seuls les champs autorisés sont modifiables (pas isVerified, rôle, note…).
+      const { profile: saved } = await missionService.updateProfile({
+        displayName: editName,
+        bio: editBio,
+        location: editLocation as any,
+        phone: editPhone,
+        ...(profile.role === 'candidate'
+          ? { skills: editSkills, trades: editTrades, experienceYears: editExperience, serviceCities: editServiceCities, businessName: editBusinessName.trim(), businessRegistration: editBusinessReg.trim(), whatsappConsent: editWhatsapp }
+          : {}),
+      });
+      onProfileUpdate({ ...profile, ...saved, role: profile.role });
       setSuccessMsg('Votre profil a été mis à jour !');
       setTimeout(() => setSuccessMsg(''), 4000);
-    } catch (err) {
-      handleAppwriteError(err, OperationType.UPDATE, `users/${profile.uid}`);
+    } catch (err: any) {
+      showNotification(err?.message || "Le profil n'a pas pu être enregistré.", 'error');
     } finally {
       setUpdatingProfile(false);
-    }
-  };
-
-  const handleVerifySubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user || !profile) return;
-    setIsSubmittingID(true);
-    setVerificationFeedback('');
-    try {
-      // Simulate ID verification submission by setting a flag in Appwrite
-      const updated: UserProfile = {
-        ...profile,
-        isVerified: false, // will require admin verification
-        bio: (profile.bio || '') + `\n[ID Soumise pour CNI/Passeport: N° ${idNumber}]`
-      };
-      const isDemoMode = import.meta.env.DEV && (profile.uid?.startsWith('demo-') ?? false);
-      if (isDemoMode) {
-        localStorage.setItem('demo_profile', JSON.stringify(updated));
-        onProfileUpdate(updated);
-        setVerificationFeedback('Votre demande de certification (Démo) a été transmise aux administrateurs !');
-        setIdNumber('');
-        return;
-      }
-      await setDoc(doc(db, 'users', profile.uid), updated);
-      onProfileUpdate(updated);
-      setVerificationFeedback('Votre demande de certification a été transmise aux administrateurs avec succès !');
-      setIdNumber('');
-    } catch (err) {
-      handleAppwriteError(err, OperationType.UPDATE, `users/${profile.uid}`);
-    } finally {
-      setIsSubmittingID(false);
     }
   };
 
@@ -472,24 +449,26 @@ export function DashboardView({
     }
   };
 
+  const DOC_TYPES = { cni: 'cni_passport', casier: 'casier_judiciaire', domicile: 'justificatif_domicile' } as const;
+
   const processSelectedFile = async (file: File, type: 'cni' | 'casier' | 'domicile') => {
     setUploadSteps(prev => ({ ...prev, [type]: 'uploading' }));
-    
-    const reader = new FileReader();
-    reader.onload = () => {
-      const base64 = reader.result as string;
-      const sizeStr = (file.size / (1024 * 1024)).toFixed(2) + " MB";
-      
-      setTimeout(() => {
-        const fileData = { name: file.name, base64, size: sizeStr };
-        if (type === 'cni') setCniFile(fileData);
-        if (type === 'casier') setCasierFile(fileData);
-        if (type === 'domicile') setDomicileFile(fileData);
-        
-        setUploadSteps(prev => ({ ...prev, [type]: 'success' }));
-      }, 1000);
-    };
-    reader.readAsDataURL(file);
+    setVerificationSubmitFeedback('');
+    try {
+      // Type réel lu dans les octets, image réencodée (métadonnées retirées), poids borné ; le serveur revérifie tout.
+      const prepared = await prepareUpload(file);
+      const { doc: saved } = await missionService.uploadDoc(DOC_TYPES[type], prepared.dataBase64);
+      const fileData = { name: file.name, base64: prepared.previewUrl, size: (prepared.size / (1024 * 1024)).toFixed(2) + ' MB' };
+      if (type === 'cni') setCniFile(fileData);
+      if (type === 'casier') setCasierFile(fileData);
+      if (type === 'domicile') setDomicileFile(fileData);
+      // La liste des pièces vient du serveur (statut « en attente » imposé, nouveau document à revalider).
+      if (profile) onProfileUpdate({ ...profile, isVerified: false, verificationDocs: [...(profile.verificationDocs || []).filter(d => d.type !== saved.type), saved] });
+      setUploadSteps(prev => ({ ...prev, [type]: 'success' }));
+    } catch (err: any) {
+      setUploadSteps(prev => ({ ...prev, [type]: 'idle' }));
+      setVerificationSubmitFeedback(err?.message || "Le fichier n'a pas pu être envoyé.");
+    }
   };
 
   const handleDrop = async (e: React.DragEvent, type: 'cni' | 'casier' | 'domicile') => {
@@ -516,64 +495,17 @@ export function DashboardView({
     setUploadSteps(prev => ({ ...prev, [type]: 'idle' }));
   };
 
+  // Les pièces sont envoyées une à une dès leur sélection ; ce bouton confirme simplement la transmission.
   const submitDocumentsForVerification = async () => {
     if (!profile || !user) return;
-    if (!cniFile) {
+    const hasCni = !!cniFile || (profile.verificationDocs || []).some(d => d.type === 'cni_passport');
+    if (!hasCni) {
       setVerificationSubmitFeedback('La pièce d’identité (CNI ou Passeport) est obligatoire pour valider la demande.');
       return;
     }
-    setSubmittingVerification(true);
-    setVerificationSubmitFeedback('');
-
-    try {
-      const docsToSave: any[] = [];
-      if (cniFile) {
-        docsToSave.push({
-          name: cniFile.name,
-          type: 'cni_passport',
-          status: 'pending',
-          uploadedAt: new Date().toISOString(),
-          url: cniFile.base64
-        });
-      }
-      if (casierFile) {
-        docsToSave.push({
-          name: casierFile.name,
-          type: 'casier_judiciaire',
-          status: 'pending',
-          uploadedAt: new Date().toISOString(),
-          url: casierFile.base64
-        });
-      }
-      if (domicileFile) {
-        docsToSave.push({
-          name: domicileFile.name,
-          type: 'justificatif_domicile',
-          status: 'pending',
-          uploadedAt: new Date().toISOString(),
-          url: domicileFile.base64
-        });
-      }
-
-      // Merge verified state / fields
-      const updatedProfile = {
-        ...profile,
-        verificationDocs: docsToSave,
-        isVerified: false
-      };
-
-      await setDoc(doc(db, 'users', profile.uid), updatedProfile, { merge: true });
-      onProfileUpdate(updatedProfile);
-      setVerificationSubmitFeedback('Vos documents ont été transmis avec succès et sont en cours d’examen par l’équipe d’administration d’IvoireSource !');
-    } catch (err) {
-      console.error(err);
-      setVerificationSubmitFeedback('Erreur lors de la transmission de vos pièces. Veuillez réessayer.');
-    } finally {
-      setSubmittingVerification(false);
-    }
+    setVerificationSubmitFeedback('Vos documents ont été transmis avec succès et sont en cours d’examen par l’équipe d’administration d’IvoireSource !');
   };
 
-  // ADMIN CONTROLS: Approve specific identity document
   const approveIndividualDoc = async (docType: string) => {
     if (!viewingDocsUser) return;
     try {
@@ -904,203 +836,6 @@ export function DashboardView({
     }
   };
 
-  useEffect(() => {
-    if (!user) return;
-    const checkProfile = async () => {
-      if (!profile) {
-        try {
-          const docRef = doc(db, 'users', profile.uid);
-          const docSnap = await getDoc(docRef);
-          if (docSnap.exists()) {
-            const parsed = docSnap.data() as UserProfile;
-            onProfileUpdate(parsed);
-            localStorage.setItem(`profile_${profile.uid}`, JSON.stringify(parsed));
-          }
-        } catch (err) {
-          console.warn("Delayed profile fetch failed or offline, accessing caching:", err);
-          const cached = localStorage.getItem(`profile_${profile.uid}`);
-          if (cached) {
-            onProfileUpdate(JSON.parse(cached));
-          }
-        }
-      }
-    };
-    checkProfile();
-  }, [user, profile]);
-
-  useEffect(() => {
-    if (!user || !profile) return;
-    
-    const fetchData = async () => {
-      setLoadingData(true);
-      const isDemoMode = import.meta.env.DEV && (profile.uid?.startsWith('demo-') ?? false);
-      try {
-        if (isDemoMode) {
-          throw new Error("Local Demo Mode Active");
-        }
-
-        if (profile.role === 'admin') {
-          const qUsers = query(collection(db, 'users'), orderDesc('$createdAt'), limit(adminLimit));
-          const snapUsers = await getDocs(qUsers);
-          setAllUsers(snapUsers.docs.map(d => d.data() as UserProfile));
-
-          const qJobs = query(collection(db, 'jobs'), orderDesc('$createdAt'), limit(adminLimit));
-          const snapJobs = await getDocs(qJobs);
-          setMyJobs(snapJobs.docs.map(d => ({ id: d.id, ...d.data() } as JobPost)));
-
-          const qApps = query(collection(db, 'applications'), orderDesc('$createdAt'), limit(adminLimit));
-          const snapApps = await getDocs(qApps);
-          setApps(snapApps.docs.map(d => ({ id: d.id, ...d.data() } as Application)));
-        }
-
-        if (profile.role === 'employer') {
-          const qJobs = query(collection(db, 'jobs'), where('employerId', '==', profile.uid));
-          const snapJobs = await getDocs(qJobs);
-          setMyJobs(snapJobs.docs.map(d => ({ id: d.id, ...d.data() } as JobPost)));
-
-          const qApps = query(collection(db, 'applications'), where('employerId', '==', profile.uid));
-          const snapApps = await getDocs(qApps);
-          setApps(snapApps.docs.map(d => ({ id: d.id, ...d.data() } as Application)));
-
-        }
-        
-        if (profile.role === 'candidate') {
-          const qApps = query(collection(db, 'applications'), where('candidateId', '==', profile.uid));
-          const snapApps = await getDocs(qApps);
-          setApps(snapApps.docs.map(d => ({ id: d.id, ...d.data() } as Application)));
-        }
-      } catch (err) {
-        if (!isDemoMode) {
-          console.error("[DASHBOARD] Chargement des données impossible:", err);
-          setMyJobs([]); setApps([]); setAllUsers([]); setCandidates([]);
-          return;
-        }
-        console.log("[DASHBOARD] Données de démonstration (mode DEV)", err);
-        // Populating offline/simulated local data based on role
-        if (profile.role === 'admin') {
-          setAllUsers([
-            {
-              uid: 'demo-candidate-uid-123',
-              role: 'candidate',
-              displayName: 'Marie Kouassi',
-              email: 'marie.k@gmail.com',
-              photoURL: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=200&auto=format&fit=crop',
-              skills: ["Plomberie", "Dépannage"],
-              isVerified: true,
-              isPremium: false,
-              averageRating: 4.8,
-              reviewCount: 3,
-              createdAt: new Date().toISOString()
-            },
-            {
-              uid: 'demo-employer-uid-456',
-              role: 'employer',
-              displayName: 'Société Ivoire Prestige',
-              email: 'employer@ivoiresource.ci',
-              photoURL: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?q=80&w=200&auto=format&fit=crop',
-              skills: [],
-              isVerified: true,
-              isPremium: true,
-              averageRating: 0,
-              reviewCount: 0,
-              createdAt: new Date().toISOString()
-            }
-          ]);
-          
-          const localJobs = JSON.parse(localStorage.getItem('offline_jobs') || '[]');
-          const defaultDemoJobs = [
-            {
-              id: 'demo-0',
-              employerId: 'system',
-              title: 'Réparation d’une fuite (Cocody)',
-              description: 'Fuite d’eau sous un évier de cuisine, intervention rapide souhaitée.',
-              category: 'plomberie',
-              location: 'Abidjan',
-              budget: 25000,
-              status: 'approved',
-              isPremium: true,
-              createdAt: new Date().toISOString()
-            }
-          ];
-          setMyJobs(localJobs.length > 0 ? localJobs : defaultDemoJobs);
-
-          const localApps = JSON.parse(localStorage.getItem('offline_applications') || '[]');
-          const defaultDemoApps = [
-            {
-              id: 'local-app-1',
-              jobId: 'demo-0',
-              employerId: 'system',
-              candidateId: 'demo-candidate-uid-123',
-              status: 'pending',
-              message: "Bonjour, j'ai 3 ans d'expérience dans la garde de très jeunes enfants et d'entretien de maison.",
-              candidateName: 'Marie Kouassi',
-              photoURL: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=200&auto=format&fit=crop',
-              experienceYears: 3,
-              cvName: 'Mon_CV.pdf',
-              cvUrl: '#',
-              createdAt: new Date().toISOString()
-            }
-          ];
-          setApps(localApps.length > 0 ? localApps : defaultDemoApps);
-        }
-
-        if (profile.role === 'employer') {
-          setCandidates([
-            {
-              uid: 'demo-candidate-uid-123',
-              role: 'candidate',
-              displayName: 'Marie Kouassi',
-              email: 'marie.k@gmail.com',
-              photoURL: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=200&auto=format&fit=crop',
-              skills: ["Plomberie", "Dépannage"],
-              isVerified: true,
-              isPremium: false,
-              averageRating: 4.8,
-              reviewCount: 3,
-              createdAt: new Date().toISOString(),
-              verificationDocs: [
-                { name: 'CNI_Marie_Kouassi.pdf', type: 'cni_passport', status: 'approved', uploadedAt: new Date().toISOString() }
-              ]
-            }
-          ]);
-
-          const localJobs = JSON.parse(localStorage.getItem('offline_jobs') || '[]');
-          setMyJobs(localJobs.filter((j: any) => j.employerId === profile.uid));
-
-          const localApps = JSON.parse(localStorage.getItem('offline_applications') || '[]');
-          setApps(localApps.filter((a: any) => a.employerId === profile.uid));
-        }
-
-        if (profile.role === 'candidate') {
-          const localApps = JSON.parse(localStorage.getItem('offline_applications') || '[]');
-          setApps(localApps.filter((a: any) => a.candidateId === profile.uid));
-        }
-      } finally {
-        setLoadingData(false);
-      }
-    };
-
-    fetchData();
-  }, [user, profile, activeTab, adminLimit]);
-
-  // Paiements (admin) : la table n'est accessible que par le serveur.
-  const loadPayments = async () => {
-    setPaymentsLoading(true);
-    try {
-      const res = await missionService.adminListPayments(0);
-      setPayments(res.payments);
-      setPaymentsTotal(res.total);
-    } catch (err: any) {
-      console.error('[ADMIN] paiements indisponibles', err);
-    } finally {
-      setPaymentsLoading(false);
-    }
-  };
-  useEffect(() => {
-    const demo = import.meta.env.DEV && (profile?.uid?.startsWith('demo-') ?? false);
-    if (profile?.role === 'admin' && activeTab === 'admin' && !demo) loadPayments();
-  }, [profile?.role, activeTab, adminTab]);
-
   const viewCandidate = async (candidateId: string, app?: Application) => {
     // Les coordonnées d'un artisan ne sont visibles que de l'administration : les clients passent par la plateforme.
     if (profile?.role !== 'admin') return;
@@ -1232,7 +967,7 @@ export function DashboardView({
 
         <div className="p-6 mt-auto border-t border-slate-50">
            <div className="bg-slate-50 p-4 rounded-2xl flex items-center gap-3 mb-6 border border-slate-100">
-              <img src={profile.photoURL || 'https://via.placeholder.com/40'} className="h-10 w-10 rounded-full border-2 border-white shadow-sm" />
+              <img src={profile.photoURL || AVATAR_PLACEHOLDER} className="h-10 w-10 rounded-full border-2 border-white shadow-sm" />
               <div className="min-w-0">
                  <p className="font-bold text-slate-800 truncate text-xs">{profile.displayName}</p>
                  <p className="text-[9px] text-emerald-600 font-black uppercase tracking-widest">{profile.role}</p>
@@ -1802,7 +1537,7 @@ export function DashboardView({
                                         <tr key={u.uid} className="hover:bg-slate-50/50 transition-colors">
                                            <td className="px-6 py-4">
                                               <div className="flex items-center gap-3">
-                                                 <img src={u.photoURL || 'https://via.placeholder.com/32'} className="w-8 h-8 rounded-full border border-slate-100 shadow-sm" />
+                                                 <img src={u.photoURL || AVATAR_PLACEHOLDER} className="w-8 h-8 rounded-full border border-slate-100 shadow-sm" />
                                                  <div>
                                                     <p className="font-bold text-slate-800 text-xs">{u.displayName}</p>
                                                     <p className="text-[10px] text-slate-400">{u.email}</p>
@@ -2170,7 +1905,7 @@ export function DashboardView({
                        <span className="text-[10px] uppercase font-black text-slate-400 tracking-widest block">Photo Pro</span>
                        <div className="relative w-28 h-28 mx-auto">
                           <img 
-                            src={profile.photoURL || 'https://via.placeholder.com/150'} 
+                            src={profile.photoURL || AVATAR_PLACEHOLDER} 
                             alt={profile.displayName} 
                             className="w-full h-full rounded-full border-4 border-slate-50 object-cover shadow-md"
                           />
@@ -2376,21 +2111,8 @@ export function DashboardView({
                                  <p className="text-[9px] text-slate-400 font-medium font-mono">Déposé le : {new Date(doc.uploadedAt).toLocaleDateString('fr-FR')}</p>
                                </div>
 
-                               {/* View link if doc is image */}
-                               {doc.url && (
-                                 <button 
-                                   onClick={() => {
-                                     // Open raw base64 or preview in new tab
-                                     const fileWin = window.open();
-                                     if (fileWin) {
-                                       fileWin.document.write(`<iframe src="${doc.url}" frameborder="0" style="border:0; top:0px; left:0px; bottom:0px; right:0px; width:100%; height:100%;" allowfullscreen></iframe>`);
-                                     }
-                                   }} 
-                                   className="text-[10px] font-bold text-slate-400 hover:text-slate-850 flex items-center gap-1 mt-2 cursor-pointer border-0 bg-transparent self-start justify-start p-0 outline-none"
-                                 >
-                                   <Eye className="h-3.5 w-3.5" /> Voir le fichier
-                                 </button>
-                               )}
+                               {/* Ouverture sécurisée : via le serveur, dans la page (jamais d'adresse issue de la base) */}
+                               {(doc.fileId || doc.url) && <SecureOpenButton doc={doc} onZoom={setZoomedFileUrl} />}
                              </div>
                            ))}
                         </div>
@@ -2653,7 +2375,7 @@ export function DashboardView({
                     </button>
                     <div className="flex gap-4 items-center">
                       <img 
-                        src={selectedApplication?.photoURL || selectedCandidate.photoURL || 'https://via.placeholder.com/150'} 
+                        src={selectedApplication?.photoURL || selectedCandidate.photoURL || AVATAR_PLACEHOLDER} 
                         alt={selectedCandidate.displayName} 
                         className="w-14 h-14 rounded-full border-2 border-white/20 object-cover"
                         referrerPolicy="no-referrer"
@@ -2687,23 +2409,6 @@ export function DashboardView({
                               {selectedApplication.cvName && (
                                 <span className="bg-amber-50 text-amber-600 px-3 py-1.5 rounded-xl border border-amber-150 inline-flex flex-wrap items-center gap-2">
                                   📄 CV : {selectedApplication.cvName}
-                                  {selectedApplication.cvUrl && (
-                                    <div className="flex gap-2 text-[10px] uppercase font-black tracking-wider">
-                                      <button 
-                                        onClick={() => setPreviewCv({ name: selectedApplication.cvName!, url: selectedApplication.cvUrl! })}
-                                        className="underline font-black text-amber-800 hover:text-amber-950 cursor-pointer"
-                                      >
-                                        [👁️ Visionner]
-                                      </button>
-                                      <a 
-                                        href={selectedApplication.cvUrl} 
-                                        download={selectedApplication.cvName}
-                                        className="underline font-black text-amber-800 hover:text-amber-950 cursor-pointer"
-                                      >
-                                        [📥 Télécharger]
-                                      </a>
-                                    </div>
-                                  )}
                                 </span>
                               )}
                             </div>
@@ -2789,7 +2494,7 @@ export function DashboardView({
                   <div className="w-full md:w-[35%] bg-slate-50 p-6 md:p-8 flex flex-col gap-6 border-b md:border-b-0 md:border-r border-slate-100 overflow-y-auto max-h-[85vh]">
                      <div className="text-center">
                         <img 
-                          src={viewingDocsUser.photoURL || 'https://via.placeholder.com/100'} 
+                          src={viewingDocsUser.photoURL || AVATAR_PLACEHOLDER} 
                           className="w-20 h-20 rounded-full border-4 border-white shadow-md mx-auto mb-3 object-cover" 
                         />
                         <h4 className="font-extrabold text-slate-800 text-sm leading-tight text-center">{viewingDocsUser.displayName}</h4>
@@ -2891,7 +2596,6 @@ export function DashboardView({
                            </div>
                         ) : (
                            viewingDocsUser.verificationDocs.map(doc => {
-                              const isImage = doc.url.startsWith('data:image/');
                               const labelTranslation = 
                                  doc.type === 'cni_passport' ? "Carte Nationale d'Identité / Passeport" :
                                  doc.type === 'casier_judiciaire' ? "Casier Judiciaire (Bulletin N°3)" :
@@ -2929,45 +2633,9 @@ export function DashboardView({
                                        </div>
                                     </div>
 
-                                    {/* Document Visual Panel */}
-                                    <div className="relative group rounded-2xl overflow-hidden border border-slate-200/60 shadow-sm bg-white p-2">
-                                       {isImage ? (
-                                          <div className="relative max-h-56 overflow-hidden bg-slate-100 rounded-xl flex items-center justify-center">
-                                             <img src={doc.url} alt={doc.name} className="max-h-56 object-contain w-full" />
-                                             <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                                                <button 
-                                                  onClick={() => setZoomedFileUrl(doc.url)}
-                                                  className="bg-white hover:bg-slate-100 text-slate-800 px-4 py-2 rounded-xl text-xs font-bold uppercase transition-transform scale-95 group-hover:scale-100 flex items-center gap-1 cursor-pointer"
-                                                >
-                                                   <Eye className="h-3.5 w-3.5" /> Agrandir
-                                                </button>
-                                                <a 
-                                                  href={doc.url} 
-                                                  download={doc.name}
-                                                  className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl text-xs font-bold uppercase transition-transform scale-95 group-hover:scale-100 flex items-center gap-1 cursor-pointer"
-                                                >
-                                                   Télécharger
-                                                </a>
-                                             </div>
-                                          </div>
-                                       ) : (
-                                          <div className="py-6 px-4 bg-slate-50 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-4">
-                                             <div className="flex items-center gap-3">
-                                                <Paperclip className="h-5 w-5 text-slate-500" />
-                                                <div className="text-left">
-                                                   <p className="text-xs font-bold text-slate-700 font-mono truncate max-w-xs">{doc.name}</p>
-                                                   <p className="text-[10px] text-slate-450">Fichier PDF ou Document de validation</p>
-                                                </div>
-                                             </div>
-                                             <a 
-                                               href={doc.url} 
-                                               download={doc.name}
-                                               className="bg-slate-200 hover:bg-slate-300 text-slate-700 px-4 py-2.5 rounded-xl text-xs font-bold uppercase flex items-center gap-1 cursor-pointer transition-colors"
-                                             >
-                                                Télécharger le PDF
-                                             </a>
-                                          </div>
-                                       )}
+                                    {/* Pièce récupérée via le serveur (droits vérifiés) : jamais d'adresse issue de la base */}
+                                    <div className="relative rounded-2xl overflow-hidden border border-slate-200/60 shadow-sm bg-white p-2">
+                                       <SecureDocPanel doc={doc} onZoom={setZoomedFileUrl} />
                                     </div>
 
                                     {/* Decision Moderator Handles */}
@@ -3014,89 +2682,6 @@ export function DashboardView({
                 src={zoomedFileUrl} 
                 className="max-w-full max-h-[90vh] object-contain rounded-2xl shadow-2xl" 
               />
-            </div>
-          )}
-
-          {previewCv && (
-            <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-[150] flex items-center justify-center p-4">
-              <motion.div 
-                initial={{ scale: 0.95, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.95, opacity: 0 }}
-                className="bg-white rounded-[32px] w-full max-w-4xl h-[85vh] overflow-hidden shadow-2xl flex flex-col border border-slate-100"
-              >
-                {/* Modal Header */}
-                <div className="px-6 py-4 border-b border-slate-150 bg-slate-50/50 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center border border-amber-100 text-xl">
-                      📄
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-black text-slate-800 truncate max-w-[200px] sm:max-w-md uppercase tracking-tight">
-                        CV : {previewCv.name}
-                      </h4>
-                      <p className="text-[10px] font-medium text-slate-400">
-                        Aperçu sécurisé du document de l'artisan
-                      </p>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center gap-2">
-                    <a 
-                      href={previewCv.url} 
-                      download={previewCv.name}
-                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 hover:scale-[1.02] active:scale-[0.98] transition-all text-white rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 shadow-sm shadow-emerald-500/10 cursor-pointer"
-                    >
-                      <span>📥</span>
-                      <span>Télécharger</span>
-                    </a>
-                    
-                    <a 
-                      href={previewCv.url} 
-                      target="_blank" 
-                      rel="noreferrer"
-                      className="px-3 py-2 bg-slate-100 hover:bg-slate-200 transition-colors text-slate-600 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <span>🗎</span>
-                      <span className="hidden sm:inline">Nouvel Onglet</span>
-                    </a>
-
-                    <button 
-                      onClick={() => setPreviewCv(null)} 
-                      className="w-10 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 transition-colors cursor-pointer"
-                    >
-                      <X className="h-5 w-5" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Modal Body / Viewport */}
-                <div className="flex-1 bg-slate-100 flex flex-col p-4 overflow-hidden justify-center items-center">
-                  {previewCv.url ? (
-                    previewCv.url.startsWith('data:image/') ? (
-                      <div className="overflow-auto max-w-full max-h-full flex justify-center items-center p-4">
-                        <img 
-                          src={previewCv.url} 
-                          alt={previewCv.name} 
-                          className="max-w-full max-h-[70vh] object-contain rounded-lg shadow-lg border border-slate-200 bg-white" 
-                        />
-                      </div>
-                    ) : (
-                      <iframe 
-                        src={previewCv.url} 
-                        className="w-full h-full rounded-2xl border border-slate-200 bg-white shadow-inner" 
-                        title="Aperçu du CV"
-                      />
-                    )
-                  ) : (
-                    <div className="text-center py-12 px-6">
-                       <span className="text-5xl block mb-4">⚠️</span>
-                       <p className="text-sm font-bold text-slate-700">Contenu indisponible</p>
-                       <p className="text-xs text-slate-400 mt-1">Le format de ce fichier ne permet pas un aperçu direct. Veuillez le télécharger.</p>
-                    </div>
-                  )}
-                </div>
-              </motion.div>
             </div>
           )}
 

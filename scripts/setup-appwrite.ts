@@ -78,8 +78,9 @@ const COLLECTIONS: CollectionDef[] = [
   {
     id: 'users',
     name: 'Profils',
-    // Chaque utilisateur crée son profil ; lecture/modification réservées à lui (permission de document) et aux admins.
-    permissions: ['create("users")', ...ADMIN],
+    // Profils créés et modifiés par le serveur (/api/profile) ; le navigateur ne peut que lire son propre profil
+    // (permission de document). Les admins gardent lecture/écriture/création (panneau d'administration).
+    permissions: ['create("label:admin")', ...ADMIN],
     documentSecurity: true,
     attributes: [
       s('uid', 64), s('role', 20), s('displayName', 120), s('email', 255), s('photoURL', 1000), s('location', 120),
@@ -150,6 +151,14 @@ const COLLECTIONS: CollectionDef[] = [
     documentSecurity: false,
     attributes: [s('ownerId', 64), s('name', 80), s('quote', 20000), s('createdAt', 40), s('updatedAt', 40)],
     indexes: [{ key: 'idx_owner', attributes: ['ownerId'] }],
+  },
+  {
+    id: 'audit_logs',
+    name: "Journal d'audit",
+    permissions: [], // serveur uniquement ; lecture admin via /api/admin/audit
+    documentSecurity: false,
+    attributes: [s('actorId', 64), s('action', 60), s('targetId', 64), s('ip', 64), s('meta', 500), s('createdAt', 40)],
+    indexes: [{ key: 'idx_actor', attributes: ['actorId'] }, { key: 'idx_action', attributes: ['action'] }, { key: 'idx_created', attributes: ['createdAt'] }],
   },
   {
     id: 'outreach',
@@ -226,11 +235,14 @@ async function main() {
 
   console.log('\nStockage');
   const bucket = await call('GET', `/storage/buckets/${BUCKET_ID}`);
-  if (bucket.status === 200) console.log(`  = bucket ${BUCKET_ID} (déjà présent)`);
-  else await ensure(`bucket ${BUCKET_ID}`, 'POST', '/storage/buckets', {
-    bucketId: BUCKET_ID, name: 'Documents', permissions: ['create("users")'], fileSecurity: true,
-    maximumFileSize: 10_000_000, allowedFileExtensions: ['pdf', 'jpg', 'jpeg', 'png'],
-  });
+  const bucketBody = {
+    name: 'Documents', permissions: [] as string[], fileSecurity: true,
+    maximumFileSize: 4_000_000, allowedFileExtensions: ['pdf', 'jpg', 'jpeg', 'png', 'webp'],
+    enabled: true, antivirus: true,
+  };
+  // Bucket isolé : aucun droit côté navigateur ; l'envoi et la lecture passent par /api/upload et /api/files.
+  if (bucket.status === 200) await ensure(`bucket ${BUCKET_ID} (verrouillage)`, 'PUT', `/storage/buckets/${BUCKET_ID}`, bucketBody);
+  else await ensure(`bucket ${BUCKET_ID}`, 'POST', '/storage/buckets', { bucketId: BUCKET_ID, ...bucketBody });
 
   console.log(`
 Terminé. À renseigner dans Vercel (Settings → Environment Variables) :
@@ -242,6 +254,7 @@ Terminé. À renseigner dans Vercel (Settings → Environment Variables) :
   APPWRITE_ENDPOINT=${endpoint}
   APPWRITE_PROJECT_ID=${project}
   APPWRITE_DATABASE_ID=${DATABASE_ID}
+  APPWRITE_BUCKET_ID=${BUCKET_ID}
   APPWRITE_API_KEY=<votre clé API serveur, ne jamais la préfixer par VITE_>
 
 Reste à faire dans la console : poser le label « admin » sur votre compte (Auth → utilisateur → Labels).

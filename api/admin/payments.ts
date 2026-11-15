@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { audit, protect, sendError } from '../_lib/security.js';
 import { z } from 'zod';
-import { HttpError, MISSION_STATUS, authenticate, db, readBody, requireAdmin, sanitizeText } from '../_lib/server.js';
+import { HttpError, MISSION_STATUS, db, readBody, requireAdmin, sanitizeText } from '../_lib/server.js';
 
 /**
  * Suivi des paiements et des reversements — réservé à l'administration.
@@ -23,7 +24,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Méthode non autorisée' });
 
   try {
-    const user = await authenticate(req);
+    const user = await protect(req, { name: 'admin-payments', max: 60, windowSec: 60 });
     requireAdmin(user);
     const parsed = Schema.safeParse(readBody(req));
     if (!parsed.success) return res.status(400).json({ error: 'Données invalides' });
@@ -57,10 +58,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       payoutSentAt: new Date().toISOString(),
       payoutReference: sanitizeText(input.reference, 64),
     });
+    await audit(req, user.$id, 'admin.payout.sent', mission.$id, { reference: sanitizeText(input.reference, 64) });
     return res.status(200).json({ success: true });
   } catch (error: any) {
-    if (error instanceof HttpError) return res.status(error.status).json({ error: error.message });
-    console.error('[admin/payments]', error?.message);
-    return res.status(500).json({ error: 'Erreur serveur.' });
+    return sendError(res, error, '[admin/payments]');
   }
 }

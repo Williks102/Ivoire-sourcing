@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { protect, sendError } from './_lib/security.js';
 import { z } from 'zod';
-import { HttpError, authenticate, db, readBody, sanitizeText } from './_lib/server.js';
+import { HttpError, db, readBody, sanitizeText } from './_lib/server.js';
 import { parseQuote, quoteInputSchema, quoteProblem, quoteTotal } from './_lib/quote.js';
 
 /**
@@ -40,7 +41,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Méthode non autorisée' });
 
   try {
-    const user = await authenticate(req);
+    const user = await protect(req, { name: 'quotes', max: 60, windowSec: 60 });
     const parsed = Schema.safeParse(readBody(req));
     if (!parsed.success) return res.status(400).json({ error: 'Données invalides : vérifiez le nom et les lignes du devis.' });
     const input = parsed.data;
@@ -73,8 +74,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const row = await db.create('quote_templates', 'unique()', { ownerId: user.$id, ...data, createdAt: data.updatedAt });
     return res.status(200).json({ success: true, template: present(row) });
   } catch (error: any) {
-    if (error instanceof HttpError) return res.status(error.status).json({ error: error.message });
-    console.error('[quotes]', error?.message);
-    return res.status(500).json({ error: 'Erreur serveur.' });
+    return sendError(res, error, '[quotes]');
   }
 }

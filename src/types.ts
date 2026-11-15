@@ -8,7 +8,12 @@ export interface VerificationDoc {
   type: 'cni_passport' | 'casier_judiciaire' | 'justificatif_domicile';
   status: 'pending' | 'approved' | 'rejected';
   uploadedAt: string;
-  url?: string; // Storable base64
+  /** Fichier dans le stockage privé (téléversé via le serveur) ; lu par /api/files. */
+  fileId?: string;
+  mime?: string;
+  size?: number;
+  /** @deprecated ancien stockage en base64, lu seulement s'il s'agit d'une image. */
+  url?: string;
 }
 
 export interface UserProfile {
