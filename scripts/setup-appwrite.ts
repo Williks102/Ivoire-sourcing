@@ -144,6 +144,14 @@ const COLLECTIONS: CollectionDef[] = [
     ],
   },
   {
+    id: 'quote_templates',
+    name: 'Modèles de devis',
+    permissions: [], // serveur uniquement : chaque artisan accède aux siens via /api/quotes
+    documentSecurity: false,
+    attributes: [s('ownerId', 64), s('name', 80), s('quote', 20000), s('createdAt', 40), s('updatedAt', 40)],
+    indexes: [{ key: 'idx_owner', attributes: ['ownerId'] }],
+  },
+  {
     id: 'outreach',
     name: 'Diffusions',
     permissions: [], // serveur uniquement : journal des artisans contactés par l'administration

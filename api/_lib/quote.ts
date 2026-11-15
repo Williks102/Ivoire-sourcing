@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { forPrompt } from './ai.js';
 
 /**
@@ -66,3 +67,16 @@ export function quoteNumber(offer: { $id?: string; id?: string; createdAt?: stri
 /** Montant lisible : « 25 000 FCFA » (espace insécable classique, compatible avec les polices PDF standard). */
 export const money = (n: unknown) =>
   `${Math.round(Number(n) || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} FCFA`;
+
+/** Forme attendue d'un devis envoyé par le navigateur (offre, modèle ou brouillon) ; le contenu est ensuite nettoyé par parseQuote. */
+export const quoteInputSchema = z.object({
+  lines: z.array(z.object({
+    label: z.string().max(200),
+    qty: z.number().min(0).max(100000),
+    unit: z.string().max(20).optional(),
+    unitPrice: z.number().min(0).max(10_000_000),
+  })).min(1).max(MAX_QUOTE_LINES),
+  discount: z.number().min(0).max(10_000_000).optional(),
+  validityDays: z.number().min(1).max(90).optional(),
+  conditions: z.string().max(1000).optional(),
+});

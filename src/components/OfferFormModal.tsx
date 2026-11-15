@@ -3,7 +3,8 @@ import { motion } from 'motion/react';
 import { X, Wallet, Clock, Phone, User } from 'lucide-react';
 import { JobPost, UserProfile } from '../types';
 import { COMMISSION_RATE, formatFcfa } from '../constants';
-import { QuoteEditor, QuoteDraft, draftToQuote, emptyDraft } from './QuoteEditor';
+import { QuoteEditor, QuoteDraft, draftToQuote, emptyDraft, quoteToDraft } from './QuoteEditor';
+import { missionService, QuoteTemplate } from '../services/missionService';
 import { Quote, quoteProblem, quoteSubtotal } from '../lib/quote';
 
 interface OfferFormModalProps {
@@ -33,6 +34,13 @@ export function OfferFormModal({ job, profile, onClose, onSubmit }: OfferFormMod
   const [detailed, setDetailed] = useState(false);
   const [draft, setDraft] = useState<QuoteDraft>(emptyDraft());
   const [formError, setFormError] = useState('');
+  const [templates, setTemplates] = useState<QuoteTemplate[]>([]);
+
+  // Modèles de devis de l'artisan : chargés la première fois qu'il ouvre le devis détaillé.
+  React.useEffect(() => {
+    if (!detailed || templates.length > 0) return;
+    missionService.listQuoteTemplates().then(r => setTemplates(r.templates)).catch(() => { /* facultatif : sans modèles, la saisie reste possible */ });
+  }, [detailed]);
 
   if (!job) return null;
 
@@ -115,6 +123,18 @@ export function OfferFormModal({ job, profile, onClose, onSubmit }: OfferFormMod
               className="text-xs font-bold text-emerald-700 hover:text-emerald-800 underline underline-offset-2">
               {detailed ? 'Retirer le devis détaillé (prix libre)' : 'Ajouter un devis détaillé (facultatif)'}
             </button>
+            {detailed && templates.length > 0 && (
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 space-y-1">Partir d'un de mes modèles
+                <select aria-label="Charger un modèle de devis" defaultValue="" onChange={e => {
+                  const t = templates.find(x => x.id === e.target.value);
+                  if (t?.quote) setDraft(quoteToDraft(t.quote));
+                  e.target.value = '';
+                }} className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2.5 text-sm normal-case tracking-normal font-medium text-slate-700">
+                  <option value="">Choisir un modèle…</option>
+                  {templates.map(t => <option key={t.id} value={t.id}>{t.name} — {formatFcfa(t.total)}</option>)}
+                </select>
+              </label>
+            )}
             {detailed && <QuoteEditor value={draft} onChange={setDraft} />}
             {detailed && quoteDraft && quoteProblem(quoteDraft) && (
               <p role="status" className="text-xs font-bold text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2">{quoteProblem(quoteDraft)}</p>

@@ -34,6 +34,7 @@ import { ClientMissionsPanel, ArtisanMissionsPanel } from './MissionsPanel';
 import { ArtisanProfileFields } from './ArtisanProfileFields';
 import { OutreachModal } from './OutreachModal';
 import { ArtisanRevenuePanel } from './ArtisanRevenuePanel';
+import { QuotesPanel } from './QuotesPanel';
 import { toWhatsAppNumber } from '../lib/phone';
 
 enum OperationType {
@@ -72,7 +73,7 @@ function handleAppwriteError(error: unknown, operationType: OperationType, path:
 interface DashboardViewProps {
   profile: UserProfile | null;
   user: any | null;
-  activeTab: 'overview' | 'verification' | 'my-jobs' | 'applications' | 'revenue' | 'admin' | 'profile';
+  activeTab: 'overview' | 'verification' | 'my-jobs' | 'applications' | 'quotes' | 'revenue' | 'admin' | 'profile';
   setActiveTab: (tab: any) => void;
   onProfileUpdate: (p: UserProfile) => void;
   setView: (v: any) => void;
@@ -1180,6 +1181,7 @@ export function DashboardView({
     { id: 'profile', label: "Mon Profil", icon: <UserIcon className="h-4 w-4" />, roles: ['candidate', 'employer', 'admin'] },
     { id: 'my-jobs', label: "Mes missions", icon: <BarChart3 className="h-4 w-4" />, roles: ['employer'] },
     { id: 'applications', label: "Mes missions & offres", icon: <Briefcase className="h-4 w-4" />, roles: ['candidate'] },
+    { id: 'quotes', label: "Mes devis", icon: <FileText className="h-4 w-4" />, roles: ['candidate'] },
     { id: 'revenue', label: "Mes revenus", icon: <BarChart3 className="h-4 w-4" />, roles: ['candidate'] },
     { id: 'verification', label: "Certification", icon: <ShieldCheck className="h-4 w-4" />, roles: ['candidate'] },
     { id: 'admin', label: "Système Admin", icon: <Settings className="h-4 w-4" />, roles: ['admin'] },
@@ -1445,6 +1447,10 @@ export function DashboardView({
 
            {activeTab === 'my-jobs' && profile.role === 'employer' && (
               <ClientMissionsPanel clientId={profile.uid} onPublish={() => setView('post-job')} />
+           )}
+
+           {activeTab === 'quotes' && profile.role === 'candidate' && (
+              <QuotesPanel artisanId={profile.uid} />
            )}
 
            {activeTab === 'revenue' && profile.role === 'candidate' && (

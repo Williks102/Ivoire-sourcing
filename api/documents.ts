@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { z } from 'zod';
 import { HttpError, MISSION_STATUS, authenticate, db, readBody } from './_lib/server.js';
-import { QuoteLine, parseQuote, quoteNumber } from './_lib/quote.js';
+import { QuoteLine, parseQuote, quoteInputSchema, quoteNumber, quoteProblem, quoteTotal } from './_lib/quote.js';
 import { currentPrice, readHistory } from './_lib/negotiation.js';
 import { CATEGORY_LABELS } from './_lib/outreach.js';
 import { renderQuotePdf, renderReceiptPdf, renderStatementPdf } from './_lib/pdf.js';
@@ -21,6 +21,8 @@ const Schema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('quote'), applicationId: Id }),
   z.object({ kind: z.literal('receipt'), missionId: Id }),
   z.object({ kind: z.literal('statement'), year: z.number().int().min(2020).max(2100).optional() }),
+  // Aperçu d'un devis en cours de rédaction (aucune mission, aucune donnée enregistrée) : l'artisan lui-même.
+  z.object({ kind: z.literal('draft'), name: z.string().trim().max(80).optional(), quote: quoteInputSchema }),
 ]);
 
 const CHANNELS: Record<string, string> = { WAVECI: 'Wave', OMCIV2: 'Orange Money', MOMOCI: 'MTN MoMo', FLOOZ: 'Moov Money', CARD: 'Carte bancaire' };
@@ -80,6 +82,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         history: readHistory(offer),
       });
       filename = `devis-${number}.pdf`;
+    } else if (input.kind === 'draft') {
+      const quote = parseQuote(input.quote);
+      const problem = quoteProblem(quote);
+      if (problem) throw new HttpError(400, problem);
+      const now = new Date();
+      bytes = await renderQuotePdf({
+        number: 'DEV-BROUILLON',
+        issuedAt: now.toISOString(),
+        validUntil: new Date(now.getTime() + quote!.validityDays * 86400000).toISOString(),
+        statusLabel: 'Brouillon (aperçu)',
+        mission: { title: input.name || 'Modèle de devis', category: '', city: '' },
+        artisan: { ...publicIdentity(await profileOf(user.$id), user.name || 'Artisan'), trades: [] },
+        client: { name: 'À renseigner' },
+        lines: quote!.lines, discount: quote!.discount, finalPrice: quoteTotal(quote!),
+        conditions: quote!.conditions || undefined,
+      });
+      filename = 'devis-brouillon.pdf';
     } else if (input.kind === 'receipt') {
       const mission = await db.get('jobs', input.missionId);
       if (!isAdmin && user.$id !== mission.employerId && user.$id !== mission.assignedArtisanId) throw new HttpError(403, "Vous n'êtes pas concerné par cette mission.");
