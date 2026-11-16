@@ -1,9 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { HttpError, db, readBody, storage } from './_lib/server.js';
-import { audit, protect, sendError } from './_lib/security.js';
-import { ALLOWED_TYPES, DOC_LABELS, MAX_FILE_BYTES, decodeBase64, detectMime, pdfHasActiveContent } from './_lib/files.js';
+import { HttpError, db, readBody, storage } from './server.js';
+import { audit, protect, sendError } from './security.js';
+import { ALLOWED_TYPES, DOC_LABELS, MAX_FILE_BYTES, decodeBase64, detectMime, pdfHasActiveContent } from './files.js';
 
 /**
  * Téléversement d'une pièce justificative (identité, casier, domicile) — commandement #11 du guide :
@@ -20,7 +20,7 @@ const Schema = z.object({
   dataBase64: z.string().min(16).max(4_300_000),
 });
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default async function uploadDoc(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Méthode non autorisée' });
 
   try {

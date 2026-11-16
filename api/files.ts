@@ -3,8 +3,13 @@ import { z } from 'zod';
 import { HttpError, readBody, storage } from './_lib/server.js';
 import { audit, protect, sendError } from './_lib/security.js';
 import { ALLOWED_TYPES, detectMime } from './_lib/files.js';
+import uploadDoc from './_lib/uploadDoc.js';
 
 /**
+ * Une seule fonction pour les pièces (limite de 12 fonctions de l'offre Vercel Hobby) :
+ *  - corps avec `dataBase64` -> téléversement (voir _lib/uploadDoc.ts)
+ *  - corps avec `fileId`     -> lecture
+ *
  * Lecture d'une pièce justificative : réservée à son propriétaire et aux administrateurs (vérifié ici, côté serveur).
  * Un fichier qui n'est pas le sien est traité comme inexistant. Le type renvoyé est celui lu dans les octets,
  * jamais un type fourni par un utilisateur : le navigateur ne reçoit que de l'image ou du PDF, jamais du HTML.
@@ -14,6 +19,8 @@ const Schema = z.object({ fileId: z.string().min(1).max(64).regex(/^[A-Za-z0-9._
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Méthode non autorisée' });
+
+  if (readBody(req).dataBase64 !== undefined) return uploadDoc(req, res);
 
   try {
     const user = await protect(req, { name: 'files', max: 60, windowSec: 60 });
