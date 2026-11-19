@@ -240,7 +240,7 @@ async function main() {
     maximumFileSize: 4_000_000, allowedFileExtensions: ['pdf', 'jpg', 'jpeg', 'png', 'webp'],
     enabled: true, antivirus: true,
   };
-  // Bucket isolé : aucun droit côté navigateur ; l'envoi et la lecture passent par /api/upload et /api/files.
+  // Bucket isolé : aucun droit côté navigateur ; l'envoi et la lecture passent par /api/files.
   if (bucket.status === 200) await ensure(`bucket ${BUCKET_ID} (verrouillage)`, 'PUT', `/storage/buckets/${BUCKET_ID}`, bucketBody);
   else await ensure(`bucket ${BUCKET_ID}`, 'POST', '/storage/buckets', { bucketId: BUCKET_ID, ...bucketBody });
 

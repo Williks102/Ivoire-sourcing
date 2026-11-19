@@ -127,7 +127,7 @@ export const missionService = {
     authFetch<{ profile: UserProfile }>('/api/profile', { action: 'ensure', role, displayName }),
   updateProfile: (fields: Partial<Pick<UserProfile, 'displayName' | 'bio' | 'location' | 'phone' | 'skills' | 'trades' | 'experienceYears' | 'serviceCities' | 'whatsappConsent' | 'businessName' | 'businessRegistration'>>) =>
     authFetch<{ profile: UserProfile }>('/api/profile', { action: 'update', fields }),
-  uploadDoc: (type: VerificationDoc['type'], dataBase64: string) => authFetch<{ doc: VerificationDoc }>('/api/upload', { type, dataBase64 }),
+  uploadDoc: (type: VerificationDoc['type'], dataBase64: string) => authFetch<{ doc: VerificationDoc }>('/api/files', { type, dataBase64 }),
   fetchFile: (fileId: string) => authFetch<{ mime: string; ext: string; dataBase64: string }>('/api/files', { fileId }),
 
   // --- Modèles de devis de l'artisan (serveur : chacun ne voit que les siens) ---
