@@ -12,7 +12,7 @@ Application du « Guide du Vibecoder Sécurisé » (règle d'or : *ne jamais fai
 | 4. Secrets | Uniquement en variables Vercel ; aucune clé dans le code ni préfixée `VITE_` ; scan dans la CI |
 | 5. XSS | Plus de `document.write`, `innerHTML` ni d'adresse lue en base : pièces affichées via `blob:` (`SecureDoc.tsx`) |
 | 6. Routes protégées | `protect()` = origine → quota IP → authentification → quota utilisateur ; IDOR → 404 |
-| 7. Dépendances | `npm audit --omit=dev` = 0 ; CI hebdomadaire + Dependabot |
+| 7. Dépendances | `npm audit --omit=dev` = 0 ; Dependabot (mises à jour mineures) — pas de CI GitHub, lancer `npm audit --omit=dev` à la main |
 | 8. Limitation de débit | Par IP et par utilisateur ; Upstash si configuré, sinon mémoire ; webhook limité avant comparaison du secret |
 | 9. Audit | Table `audit_logs` (paiements, acceptations, téléversements, échecs) |
 | 10. Plan B | `npm run backup:appwrite` ; journal d'audit ; retour arrière Vercel (Deployments → Promote) |
