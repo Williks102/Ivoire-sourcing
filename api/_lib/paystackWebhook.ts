@@ -1,21 +1,23 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { db, readBody, safeEqual } from './server.js';
+import { db, readBody } from './server.js';
 import { audit, clientIp, rateLimit, sendError } from './security.js';
 import { settlePayment } from './settle.js';
 import { paystackConfigured, verify } from './paystack.js';
 
 /**
- * Notifications Paystack, reçues via l'adresse unique du compte (ici retransmises par l'autre application qui la détient).
+ * Notifications Paystack, reçues via l'adresse unique du compte : clicbillet.com la détient et retransmet les événements
+ * `IVS-…` tels quels (corps brut + en-tête `x-paystack-signature` d'origine).
  *
- * - L'appel doit porter l'en-tête `x-forward-secret` (secret partagé PAYSTACK_FORWARD_SECRET) : coupe le bruit.
- * - Seules les références `IVS-…` nous concernent ; toutes les autres reçoivent « OK » (elles appartiennent à un autre projet).
- * - Le paiement n'est JAMAIS validé d'après le contenu reçu : on relit la transaction chez Paystack (statut, devise, montant).
+ * - L'en-tête `x-paystack-signature` sert d'aiguillage ; son contenu n'est pas la garantie d'authenticité (le corps brut
+ *   n'est pas disponible ici après lecture JSON).
+ * - La garantie, c'est la relecture : le paiement n'est JAMAIS validé d'après le contenu reçu, on interroge Paystack
+ *   (clé secrète, TLS) pour le statut, la devise et le montant. Un faux événement ne peut donc rien valider.
+ * - Seules les références `IVS-…` nous concernent ; toutes les autres reçoivent « OK » (autre projet).
  */
 export async function handlePaystack(req: VercelRequest, res: VercelResponse) {
   try {
     await rateLimit(`ip:paystack:${clientIp(req)}`, 300, 60);
-    const expected = process.env.PAYSTACK_FORWARD_SECRET;
-    if (!paystackConfigured() || !expected || !safeEqual(req.headers['x-forward-secret'], expected)) return res.status(401).json({ error: 'Unauthorized' });
+    if (!paystackConfigured()) return res.status(503).json({ error: 'Paystack non configuré.' });
 
     const payload = readBody(req);
     const reference = typeof payload?.data?.reference === 'string' ? payload.data.reference : '';

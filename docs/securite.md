@@ -56,6 +56,6 @@ Application du « Guide du Vibecoder Sécurisé » (règle d'or : *ne jamais fai
 
 ## Paystack (adresse de notification unique partagée)
 
-- Paystack n'a qu'une adresse de notification par compte : elle est détenue par `clicbillet.com`, qui retransmet à `/api/webhook` les événements dont la référence commence par `IVS-` avec l'en-tête `x-forward-secret` (`PAYSTACK_FORWARD_SECRET`).
+- Paystack n'a qu'une adresse de notification par compte : elle est détenue par `clicbillet.com`, qui retransmet à `/api/webhook` les événements dont la référence commence par `IVS-` tels quels (corps brut et en-tête `x-paystack-signature` d'origine, comme clicbillet le fait déjà pour l'autre projet).
 - IvoireSource ignore (« OK ») toute autre référence, et **ne valide jamais d'après le contenu reçu** : la transaction est relue chez Paystack (`/transaction/verify`) avec la clé secrète ; statut, devise (XOF) et montant (×100) doivent correspondre à ce qui est enregistré.
 - Activation : `PAYMENT_PROVIDER=paystack` + `PAYSTACK_SECRET_KEY`. Sans cela, Paiement Pro reste utilisé.

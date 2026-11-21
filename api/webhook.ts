@@ -19,8 +19,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Messages du bot Telegram : même fonction, reconnus à leur en-tête secret.
   if (req.headers['x-telegram-bot-api-secret-token'] !== undefined) return handleTelegram(req, res);
 
-  // Notifications Paystack retransmises par l'application qui détient l'adresse du compte.
-  if (req.headers['x-forward-secret'] !== undefined) return handlePaystack(req, res);
+  // Notifications Paystack retransmises par l'application qui détient l'adresse du compte (en-tête de signature d'origine).
+  if (req.headers['x-paystack-signature'] !== undefined) return handlePaystack(req, res);
 
   try {
     // Limitation par IP avant de comparer le secret (freine les essais répétés).
