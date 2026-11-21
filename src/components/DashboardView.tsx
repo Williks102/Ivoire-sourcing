@@ -35,6 +35,7 @@ import { ArtisanProfileFields } from './ArtisanProfileFields';
 import { OutreachModal } from './OutreachModal';
 import { ArtisanRevenuePanel } from './ArtisanRevenuePanel';
 import { SecureDocPanel, SecureOpenButton } from './SecureDoc';
+import { TelegramConnect } from './TelegramConnect';
 import { prepareUpload } from '../lib/upload';
 import { AVATAR_PLACEHOLDER } from '../constants';
 import { QuotesPanel } from './QuotesPanel';
@@ -607,6 +608,8 @@ export function DashboardView({
       await setDoc(doc(db, 'jobs', jobId), { status: newStatus }, { merge: true });
       setMyJobs(prev => prev.map(j => j.id === jobId ? { ...j, status: newStatus } : j));
       showNotification(`Le statut de la mission a été mis à jour avec succès !`, "success");
+      // Mission validée : les artisans concernés (métier, zone, Telegram relié) sont prévenus par le serveur.
+      if (newStatus === 'approved') missionService.notifyArtisans(jobId).then(r => r.sent > 0 && showNotification(`${r.sent} artisan(s) prévenu(s) sur Telegram.`, 'success')).catch(() => {});
       if (newStatus === 'approved' && typeof (window as any).triggerSocketAction === 'function') {
         (window as any).triggerSocketAction('job_moderation_approved', { title: 'Annonce Modérée' });
       } else if (newStatus === 'rejected' && typeof (window as any).triggerSocketAction === 'function') {
@@ -2011,6 +2014,8 @@ export function DashboardView({
                                   businessRegistration={editBusinessReg} setBusinessRegistration={setEditBusinessReg}
                                 />
                              )}
+
+                             <TelegramConnect profile={profile} onProfileUpdate={onProfileUpdate} />
 
                              <div className="border-t border-slate-55 pt-6 flex justify-end">
                                 <button 

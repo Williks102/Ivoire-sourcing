@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { audit, protect, sendError } from '../_lib/security.js';
+import { esc, fcfa, missionButton, notifyUser } from '../_lib/telegram.js';
 import { z } from 'zod';
 import { HttpError, MISSION_STATUS, db, readBody, sanitizeText } from '../_lib/server.js';
 import { initialProposal } from '../_lib/negotiation.js';
@@ -84,6 +85,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       [`read("user:${mission.employerId}")`, `read("user:${user.$id}")`],
     );
 
+    await notifyUser(mission.employerId, `💬 <b>Nouvelle offre</b> sur « ${esc(String(mission.title).slice(0, 80))} »\n${esc(sanitizeText(input.artisanName, 80))} propose ${fcfa(price)}${input.delay ? ` — délai : ${esc(sanitizeText(input.delay, 60))}` : ''}.`, missionButton(mission.$id, 'Voir l’offre'));
     await audit(req, user.$id, 'offer.create', doc.$id, { mission: mission.$id, price, quote: !!quoteJson });
     return res.status(200).json({ success: true, id: doc.$id });
   } catch (error: any) {

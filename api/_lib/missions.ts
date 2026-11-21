@@ -1,4 +1,5 @@
 import { HttpError, MISSION_STATUS, db } from './server.js';
+import { esc, fcfa, missionButton, notifyUser } from './telegram.js';
 import { currentPrice, partyOf, whoseTurn } from './negotiation.js';
 
 /**
@@ -37,5 +38,7 @@ export async function acceptOffer(userId: string, mission: any, offer: any, expe
       .filter((o) => o.$id !== offer.$id && o.status === 'pending')
       .map((o) => db.update('applications', o.$id, { status: 'rejected' })),
   );
+  const other = party === 'client' ? offer.candidateId : mission.employerId;
+  await notifyUser(other, `✅ <b>Offre acceptée</b> sur « ${esc(String(mission.title).slice(0, 80))} » au prix de ${fcfa(price)}.\n${party === 'client' ? 'La mission vous est attribuée.' : 'L’artisan a accepté votre prix.'}`, missionButton(mission.$id));
   return { price, acceptedBy: party };
 }

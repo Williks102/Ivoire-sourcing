@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { audit, protect, sendError } from '../_lib/security.js';
+import { esc, fcfa, missionButton, notifyUser } from '../_lib/telegram.js';
 import { z } from 'zod';
 import { HttpError, MISSION_STATUS, db, readBody, sanitizeText } from '../_lib/server.js';
 import { acceptOffer } from '../_lib/missions.js';
@@ -55,6 +56,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (input.action === 'decline') {
       await db.update('applications', offer.$id, { status: party === 'client' ? 'rejected' : 'withdrawn' });
+      await notifyUser(party === 'client' ? offer.candidateId : mission.employerId, `❌ Offre refusée sur « ${esc(String(mission.title).slice(0, 80))} ».`, missionButton(mission.$id));
       await audit(req, user.$id, 'offer.decline', offer.$id, { mission: mission.$id, by: party });
       return res.status(200).json({ success: true });
     }
@@ -68,6 +70,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const update = applyProposal(offer, party, input.price, sanitizeText(input.note, 200), new Date().toISOString());
     await db.update('applications', offer.$id, update);
+    await notifyUser(party === 'client' ? offer.candidateId : mission.employerId, `🔁 <b>Contre-proposition</b> sur « ${esc(String(mission.title).slice(0, 80))} » : ${fcfa(update.proposedPrice)}.\nÀ vous de répondre.`, missionButton(mission.$id, 'Répondre'));
     await audit(req, user.$id, 'offer.counter', offer.$id, { mission: mission.$id, price: update.proposedPrice, by: party });
     return res.status(200).json({ success: true, price: update.proposedPrice, rounds: update.rounds });
   } catch (error: any) {
