@@ -125,7 +125,7 @@ export const missionService = {
   // --- Profil et pièces justificatives (écritures par le serveur uniquement) ---
   ensureProfile: (role: 'employer' | 'candidate', displayName?: string) =>
     authFetch<{ profile: UserProfile }>('/api/profile', { action: 'ensure', role, displayName }),
-  updateProfile: (fields: Partial<Pick<UserProfile, 'displayName' | 'bio' | 'location' | 'phone' | 'skills' | 'trades' | 'experienceYears' | 'serviceCities' | 'whatsappConsent' | 'businessName' | 'businessRegistration'>>) =>
+  updateProfile: (fields: Partial<Pick<UserProfile, 'displayName' | 'bio' | 'location' | 'phone' | 'skills' | 'trades' | 'experienceYears' | 'serviceCities' | 'whatsappConsent' | 'payoutOperator' | 'payoutPhone' | 'businessName' | 'businessRegistration'>>) =>
     authFetch<{ profile: UserProfile }>('/api/profile', { action: 'update', fields }),
   telegramLink: () => authFetch<{ url: string }>('/api/profile', { action: 'telegramLink' }),
   telegramUnlink: () => authFetch<{ profile: UserProfile }>('/api/profile', { action: 'telegramUnlink' }),
@@ -175,6 +175,8 @@ export const missionService = {
   markCompleted: (missionId: string) => authFetch('/api/missions/transition', { action: 'complete', missionId }),
 
   /** Paiement de fin de mission : renvoie l'URL de la passerelle. Le montant est décidé par le serveur. */
+  /** Au retour de la page de paiement : le serveur relit la transaction et règle la mission si elle est payée. */
+  confirmPayment: (reference: string) => authFetch<{ status: string; pending?: string }>('/api/pay', { action: 'verify', reference }),
   startPayment: (missionId: string, channel: string, phoneNumber?: string) =>
     authFetch<{ paymentUrl: string; amount: number; commission: number; payout: number }>('/api/pay', {
       missionId,

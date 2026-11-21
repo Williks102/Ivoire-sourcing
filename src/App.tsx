@@ -80,6 +80,17 @@ export default function App() {
   profileRef.current = profile;
 
   // Register Toast trigger Globally
+  // Retour de la page de paiement (?payment=IVS-…) : le serveur vérifie la transaction, sans attendre le webhook.
+  useEffect(() => {
+    if (!user) return;
+    const ref = new URLSearchParams(window.location.search).get('payment');
+    if (!ref || !/^IVS-[A-Za-z0-9-]{4,60}$/.test(ref)) return;
+    window.history.replaceState({}, '', window.location.pathname);
+    missionService.confirmPayment(ref)
+      .then((r) => addToast(r.status === 'success' ? '✅ Paiement confirmé. Merci !' : r.pending ? '⏳ Paiement en attente de confirmation par votre opérateur.' : 'Paiement non confirmé pour le moment : il sera pris en compte dès réception.', r.status === 'success' ? 'success' : 'info'))
+      .catch(() => addToast('Le paiement sera pris en compte dès confirmation par la passerelle.', 'info'));
+  }, [user]);
+
   useEffect(() => {
     (window as any).addToast = addToast;
   }, []);

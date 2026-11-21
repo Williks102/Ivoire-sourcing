@@ -33,6 +33,8 @@ export interface UserProfile {
   serviceCities?: string[];
   /** L'artisan accepte d'être contacté par WhatsApp pour des missions (explicite, jamais coché par défaut). */
   whatsappConsent?: boolean;
+  payoutOperator?: 'wave' | 'orange' | 'mtn' | 'moov' | '';
+  payoutPhone?: string;
   /** Notifications Telegram reliées (l'identifiant de conversation reste côté serveur). */
   telegramLinked?: boolean;
   whatsappConsentAt?: string;
@@ -91,6 +93,9 @@ export interface JobPost {
   payoutStatus?: 'pending' | 'sent';
   payoutSentAt?: string;
   payoutReference?: string;
+  /** Compte de reversement de l'artisan, figé au moment du paiement. */
+  payoutOperator?: string;
+  payoutPhone?: string;
   // Analyse IA faite à la publication (facultative) :
   aiSummary?: string;
   aiTags?: string[];

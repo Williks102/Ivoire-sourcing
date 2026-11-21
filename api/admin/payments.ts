@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { audit, protect, sendError } from '../_lib/security.js';
 import { z } from 'zod';
+import { esc, fcfa, notifyUser } from '../_lib/telegram.js';
 import { HttpError, MISSION_STATUS, db, readBody, requireAdmin, sanitizeText } from '../_lib/server.js';
 
 /**
@@ -59,6 +60,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       payoutReference: sanitizeText(input.reference, 64),
     });
     await audit(req, user.$id, 'admin.payout.sent', mission.$id, { reference: sanitizeText(input.reference, 64) });
+    await notifyUser(mission.assignedArtisanId, `💸 <b>Reversement effectué</b>\nMission « ${esc(String(mission.title).slice(0, 80))} » : ${fcfa(mission.artisanPayout)} envoyés${mission.payoutOperator ? ` sur votre compte ${esc(mission.payoutOperator)}` : ''}.`);
     return res.status(200).json({ success: true });
   } catch (error: any) {
     return sendError(res, error, '[admin/payments]');

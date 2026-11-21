@@ -47,3 +47,15 @@ Application du « Guide du Vibecoder Sécurisé » (règle d'or : *ne jamais fai
 1. Vercel → Deployments → promouvoir la dernière version saine.
 2. Appwrite → révoquer/recréer la clé API, mettre à jour `APPWRITE_API_KEY` dans Vercel, redéployer.
 3. Consulter `audit_logs`, restaurer depuis `backups/` si besoin.
+
+## Reversement aux artisans
+
+- Compte Mobile Money de l'artisan (opérateur + numéro) saisi dans son profil, validé par le serveur ; chaque changement est tracé (numéro tronqué dans le journal) et signalé à l'artisan sur Telegram.
+- Le compte est **figé sur la mission au moment du paiement** : un changement ultérieur ne redirige pas l'argent déjà encaissé.
+- L'admin voit « Payer sur <opérateur> : <numéro> » dans « Reversements à faire », envoie le transfert, saisit la référence puis marque « Reversement effectué » ; l'artisan est prévenu.
+
+## Paystack (adresse de notification unique partagée)
+
+- Paystack n'a qu'une adresse de notification par compte : elle est détenue par `clicbillet.com`, qui retransmet à `/api/webhook` les événements dont la référence commence par `IVS-` tels quels (corps brut et en-tête `x-paystack-signature` d'origine, comme clicbillet le fait déjà pour l'autre projet).
+- IvoireSource ignore (« OK ») toute autre référence, et **ne valide jamais d'après le contenu reçu** : la transaction est relue chez Paystack (`/transaction/verify`) avec la clé secrète ; statut, devise (XOF) et montant (×100) doivent correspondre à ce qui est enregistré.
+- Activation : `PAYMENT_PROVIDER=paystack` + `PAYSTACK_SECRET_KEY`. Sans cela, Paiement Pro reste utilisé.

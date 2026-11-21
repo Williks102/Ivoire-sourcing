@@ -36,6 +36,7 @@ import { OutreachModal } from './OutreachModal';
 import { ArtisanRevenuePanel } from './ArtisanRevenuePanel';
 import { SecureDocPanel, SecureOpenButton } from './SecureDoc';
 import { TelegramConnect } from './TelegramConnect';
+import { PayoutAccountCard, payoutLabel } from './PayoutAccountCard';
 import { prepareUpload } from '../lib/upload';
 import { AVATAR_PLACEHOLDER } from '../constants';
 import { QuotesPanel } from './QuotesPanel';
@@ -1455,6 +1456,14 @@ export function DashboardView({
                                   <p className="font-bold text-slate-800 text-sm truncate">{job.title}</p>
                                   <p className="text-[11px] text-slate-400">Artisan : <b className="text-slate-600">{userName(job.assignedArtisanId)}</b> • Payée le {job.paidAt ? new Date(job.paidAt).toLocaleDateString('fr-FR') : '—'}</p>
                                   <p className="text-xs mt-1 text-slate-600">À reverser <b className="text-emerald-700">{formatFcfa(job.artisanPayout)}</b> <span className="text-slate-400">(prix {formatFcfa(job.agreedPrice)} − commission {formatFcfa(job.commissionAmount)})</span></p>
+                                  {(() => {
+                                    const art = allUsers.find(u => u.uid === job.assignedArtisanId);
+                                    const op = job.payoutOperator || art?.payoutOperator;
+                                    const num = job.payoutPhone || art?.payoutPhone;
+                                    return num
+                                      ? <p className="text-xs mt-1 font-bold text-slate-800">📲 Payer sur {payoutLabel(op)} : <span className="select-all">{num}</span></p>
+                                      : <p className="text-xs mt-1 font-bold text-amber-600">⚠️ Aucun numéro de reversement renseigné : demandez-le à l'artisan.</p>;
+                                  })()}
                                </div>
                                <div className="flex gap-2 shrink-0 items-center">
                                   <input
@@ -2188,6 +2197,7 @@ export function DashboardView({
                                 />
                              )}
 
+                             {profile.role === 'candidate' && <PayoutAccountCard profile={profile} onProfileUpdate={onProfileUpdate} />}
                              <TelegramConnect profile={profile} onProfileUpdate={onProfileUpdate} />
 
                              <div className="border-t border-slate-55 pt-6 flex justify-end">
