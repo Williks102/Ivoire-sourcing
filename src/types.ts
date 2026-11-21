@@ -33,6 +33,8 @@ export interface UserProfile {
   serviceCities?: string[];
   /** L'artisan accepte d'être contacté par WhatsApp pour des missions (explicite, jamais coché par défaut). */
   whatsappConsent?: boolean;
+  /** Notifications Telegram reliées (l'identifiant de conversation reste côté serveur). */
+  telegramLinked?: boolean;
   whatsappConsentAt?: string;
   /** Informations d'entreprise facultatives (devis et reçus). */
   businessName?: string;

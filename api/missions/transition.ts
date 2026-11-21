@@ -3,6 +3,7 @@ import { audit, protect, sendError } from '../_lib/security.js';
 import { z } from 'zod';
 import { HttpError, MISSION_STATUS, db, readBody } from '../_lib/server.js';
 import { acceptOffer } from '../_lib/missions.js';
+import { esc, missionButton, notifyUser } from '../_lib/telegram.js';
 
 /**
  * Transitions du cycle de vie d'une mission, avec contrôle des droits côté serveur :
@@ -41,6 +42,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (mission.assignedArtisanId !== user.$id) throw new HttpError(403, "Seul l'artisan choisi peut déclarer la mission terminée.");
     if (mission.status !== MISSION_STATUS.ASSIGNED) throw new HttpError(409, "Cette mission n'est pas en cours.");
     await db.update('jobs', mission.$id, { status: MISSION_STATUS.COMPLETED, completedAt: new Date().toISOString() });
+    await notifyUser(mission.employerId, `🏁 <b>Mission terminée</b> : « ${esc(String(mission.title).slice(0, 80))} ».\nVérifiez le travail puis réglez la mission pour clôturer.`, missionButton(mission.$id, 'Payer la mission'));
     await audit(req, user.$id, 'mission.complete', mission.$id);
     return res.status(200).json({ success: true, status: MISSION_STATUS.COMPLETED });
   } catch (error: any) {

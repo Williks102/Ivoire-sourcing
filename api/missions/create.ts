@@ -3,6 +3,7 @@ import { audit, protect, sendError } from '../_lib/security.js';
 import { z } from 'zod';
 import { HttpError, MISSION_STATUS, db, readBody, sanitizeText } from '../_lib/server.js';
 import { moderateMission } from '../_lib/moderation.js';
+import { notifyMissionArtisans } from '../_lib/telegram.js';
 
 /**
  * Publication d'une mission. Écrite par le serveur : l'identité du client vient du JWT
@@ -60,6 +61,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
     await audit(req, user.$id, 'mission.create', doc.$id, { status, budget: input.budget });
+    // Mission ouverte : les artisans concernés (métier + zone, Telegram relié) sont prévenus tout de suite.
+    if (status === MISSION_STATUS.OPEN) await notifyMissionArtisans(doc);
     return res.status(200).json({
       success: true,
       id: doc.$id,

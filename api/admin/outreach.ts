@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { HttpError, MISSION_STATUS, db, readBody, requireAdmin } from '../_lib/server.js';
 import { buildTemplateMessage, draftMessageWithAi, matchArtisans } from '../_lib/outreach.js';
 import { aiAvailable } from '../_lib/ai.js';
+import { notifyMissionArtisans } from '../_lib/telegram.js';
 
 /**
  * Diffusion d'une mission aux artisans concernés — réservé à l'administration.
@@ -18,6 +19,7 @@ import { aiAvailable } from '../_lib/ai.js';
 const Schema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('candidates'), missionId: z.string().min(1).max(64) }),
   z.object({ action: z.literal('draftMessage'), missionId: z.string().min(1).max(64), useAi: z.boolean().default(true) }),
+  z.object({ action: z.literal('notifyTelegram'), missionId: z.string().min(1).max(64) }),
   z.object({ action: z.literal('markContacted'), missionId: z.string().min(1).max(64), artisanId: z.string().min(1).max(64) }),
 ]);
 
@@ -54,6 +56,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const link = missionLink(mission.$id);
       const ai = input.useAi ? await draftMessageWithAi(mission, link) : null;
       return res.status(200).json({ success: true, message: ai || buildTemplateMessage(mission, link), source: ai ? 'ai' : 'template' });
+    }
+
+    if (input.action === 'notifyTelegram') {
+      // Après validation par l'administration : les artisans concernés sont prévenus (une seule fois chacun).
+      const sent = await notifyMissionArtisans(mission);
+      await audit(req, user.$id, 'admin.outreach.telegram', mission.$id, { sent });
+      return res.status(200).json({ success: true, sent });
     }
 
     // markContacted : l'artisan doit être une personne de la liste (rôle artisan)

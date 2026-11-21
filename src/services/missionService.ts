@@ -127,6 +127,10 @@ export const missionService = {
     authFetch<{ profile: UserProfile }>('/api/profile', { action: 'ensure', role, displayName }),
   updateProfile: (fields: Partial<Pick<UserProfile, 'displayName' | 'bio' | 'location' | 'phone' | 'skills' | 'trades' | 'experienceYears' | 'serviceCities' | 'whatsappConsent' | 'businessName' | 'businessRegistration'>>) =>
     authFetch<{ profile: UserProfile }>('/api/profile', { action: 'update', fields }),
+  telegramLink: () => authFetch<{ url: string }>('/api/profile', { action: 'telegramLink' }),
+  telegramUnlink: () => authFetch<{ profile: UserProfile }>('/api/profile', { action: 'telegramUnlink' }),
+  /** Admin : prévient les artisans concernés après validation d'une mission. */
+  notifyArtisans: (missionId: string) => authFetch<{ sent: number }>('/api/admin/outreach', { action: 'notifyTelegram', missionId }),
   uploadDoc: (type: VerificationDoc['type'], dataBase64: string) => authFetch<{ doc: VerificationDoc }>('/api/files', { type, dataBase64 }),
   fetchFile: (fileId: string) => authFetch<{ mime: string; ext: string; dataBase64: string }>('/api/files', { fileId }),
 

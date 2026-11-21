@@ -20,6 +20,13 @@ Application du « Guide du Vibecoder Sécurisé » (règle d'or : *ne jamais fai
 | 12. CSRF | Contrôle de l'en-tête `Origin` sur toutes les écritures |
 | 13. En-têtes | CSP stricte, HSTS, nosniff, X-Frame-Options, Referrer-Policy, Permissions-Policy (`vercel.json`) |
 
+## Notifications Telegram
+
+- Jeton du bot (`TELEGRAM_BOT_TOKEN`) uniquement dans Vercel ; le secret du webhook et les liens de liaison en sont dérivés (HMAC), valables 24 h.
+- Le webhook (`/api/webhook`, en-tête secret Telegram) refuse tout appel sans le bon secret ; seules les conversations privées sont acceptées.
+- L'identifiant de conversation reste côté serveur (jamais renvoyé au navigateur, non modifiable depuis `/api/profile`).
+- Un envoi ne bloque jamais une action : en cas de panne ou de bot bloqué, la mission/offre passe quand même.
+
 ## À faire par le propriétaire (non automatisable ici)
 
 1. **Relancer `npm run setup:appwrite`** : retire les droits d'écriture navigateur sur `users` et le bucket, crée `audit_logs`.

@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { z } from 'zod';
 import { db, readBody, sanitizeText } from './_lib/server.js';
 import { audit, protect, sendError } from './_lib/security.js';
+import { botUsername, ensureWebhook, makeLinkToken, telegramConfigured } from './_lib/telegram.js';
 
 /**
  * Création et mise à jour du profil — commandements #2 et #3 du guide (« ne jamais faire confiance au client »).
@@ -35,14 +36,16 @@ const Fields = z.object({
 const Schema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('ensure'), role: z.enum(['employer', 'candidate']).default('candidate'), displayName: z.string().trim().min(1).max(80).optional() }).strict(),
   z.object({ action: z.literal('update'), fields: Fields }).strict(),
+  z.object({ action: z.literal('telegramLink') }).strict(),
+  z.object({ action: z.literal('telegramUnlink') }).strict(),
 ]);
 
 /** Ce que le navigateur reçoit : jamais de champ système Appwrite, rôle admin uniquement d'après le label. */
 function present(row: any, isAdmin: boolean) {
-  const clean: Record<string, unknown> = Object.fromEntries(Object.entries(row).filter(([k]) => !k.startsWith('$')));
+  const clean: Record<string, unknown> = Object.fromEntries(Object.entries(row).filter(([k]) => !k.startsWith('$') && k !== 'telegramChatId'));
   let verificationDocs: unknown = clean.verificationDocs;
   if (typeof verificationDocs === 'string') { try { verificationDocs = JSON.parse(verificationDocs); } catch { verificationDocs = []; } }
-  return { ...clean, uid: row.$id, verificationDocs, role: isAdmin ? 'admin' : row.role === 'admin' ? 'candidate' : row.role };
+  return { ...clean, uid: row.$id, telegramLinked: !!row.telegramChatId, verificationDocs, role: isAdmin ? 'admin' : row.role === 'admin' ? 'candidate' : row.role };
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -87,6 +90,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
       }
       return res.status(200).json({ success: true, profile: present(row, isAdmin) });
+    }
+
+    if (input.action === 'telegramLink' || input.action === 'telegramUnlink') {
+      if (!row) return res.status(404).json({ error: 'Profil introuvable.' });
+      if (input.action === 'telegramUnlink') {
+        const updated = await db.update('users', user.$id, { telegramChatId: '' });
+        await audit(req, user.$id, 'telegram.unlink', user.$id);
+        return res.status(200).json({ success: true, profile: present(updated, isAdmin) });
+      }
+      if (!telegramConfigured()) return res.status(503).json({ error: "Les notifications Telegram ne sont pas encore activées sur ce site." });
+      await ensureWebhook();
+      const url = `https://t.me/${await botUsername()}?start=${makeLinkToken(user.$id)}`;
+      return res.status(200).json({ success: true, url });
     }
 
     // update

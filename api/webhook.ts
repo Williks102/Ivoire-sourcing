@@ -1,6 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { HttpError, MISSION_STATUS, db, readBody, safeEqual } from './_lib/server.js';
 import { audit, clientIp, rateLimit, sendError } from './_lib/security.js';
+import { handleTelegram } from './_lib/telegramWebhook.js';
+import { esc, fcfa, notifyUser } from './_lib/telegram.js';
 
 /**
  * Notification de la passerelle Paiement Pro.
@@ -14,6 +16,9 @@ const SUCCESS = new Set(['SUCCESS', 'APPROVED', 'SUCCESSFUL', 'PAID']);
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+  // Messages du bot Telegram : même fonction, reconnus à leur en-tête secret.
+  if (req.headers['x-telegram-bot-api-secret-token'] !== undefined) return handleTelegram(req, res);
 
   try {
     // Limitation par IP avant de comparer le secret (freine les essais répétés).
@@ -65,6 +70,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
     await audit(req, 'gateway', 'payment.success', reference, { mission: mission.$id, amount: payment.amount });
+    await notifyUser(payment.artisanId, `💰 <b>Paiement reçu</b>\nLe client a payé la mission « ${esc(String(mission.title).slice(0, 80))} ». Montant net pour vous : ${fcfa(payment.payout)}.`);
     return res.status(200).json({ success: true });
   } catch (error: any) {
     return sendError(res, error, '[webhook]');

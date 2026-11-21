@@ -92,10 +92,12 @@ const COLLECTIONS: CollectionDef[] = [
       b('whatsappConsent'), s('whatsappConsentAt', 40),
       // Informations d'entreprise facultatives, reprises sur les devis et reçus :
       s('businessName', 120), s('businessRegistration', 60),
+      // Conversation Telegram reliée (notifications) : écrite par le serveur uniquement.
+      s('telegramChatId', 32),
       // Liste de pièces au format JSON. À terme : stocker les fichiers dans Storage plutôt qu'en base64.
       s('verificationDocs', 2000000),
     ],
-    indexes: [{ key: 'idx_role', attributes: ['role'] }],
+    indexes: [{ key: 'idx_role', attributes: ['role'] }, { key: 'idx_telegram', attributes: ['telegramChatId'] }],
   },
   {
     id: 'jobs',
