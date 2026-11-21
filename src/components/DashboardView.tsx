@@ -839,6 +839,179 @@ export function DashboardView({
     }
   };
 
+  useEffect(() => {
+    if (!user || !profile) return;
+    
+    const fetchData = async () => {
+      setLoadingData(true);
+      const isDemoMode = import.meta.env.DEV && (profile.uid?.startsWith('demo-') ?? false);
+      try {
+        if (isDemoMode) {
+          throw new Error("Local Demo Mode Active");
+        }
+
+        if (profile.role === 'admin') {
+          const qUsers = query(collection(db, 'users'), orderDesc('$createdAt'), limit(adminLimit));
+          const snapUsers = await getDocs(qUsers);
+          setAllUsers(snapUsers.docs.map(d => d.data() as UserProfile));
+
+          const qJobs = query(collection(db, 'jobs'), orderDesc('$createdAt'), limit(adminLimit));
+          const snapJobs = await getDocs(qJobs);
+          setMyJobs(snapJobs.docs.map(d => ({ id: d.id, ...d.data() } as JobPost)));
+
+          const qApps = query(collection(db, 'applications'), orderDesc('$createdAt'), limit(adminLimit));
+          const snapApps = await getDocs(qApps);
+          setApps(snapApps.docs.map(d => ({ id: d.id, ...d.data() } as Application)));
+        }
+
+        if (profile.role === 'employer') {
+          const qJobs = query(collection(db, 'jobs'), where('employerId', '==', profile.uid));
+          const snapJobs = await getDocs(qJobs);
+          setMyJobs(snapJobs.docs.map(d => ({ id: d.id, ...d.data() } as JobPost)));
+
+          const qApps = query(collection(db, 'applications'), where('employerId', '==', profile.uid));
+          const snapApps = await getDocs(qApps);
+          setApps(snapApps.docs.map(d => ({ id: d.id, ...d.data() } as Application)));
+
+        }
+        
+        if (profile.role === 'candidate') {
+          const qApps = query(collection(db, 'applications'), where('candidateId', '==', profile.uid));
+          const snapApps = await getDocs(qApps);
+          setApps(snapApps.docs.map(d => ({ id: d.id, ...d.data() } as Application)));
+        }
+      } catch (err) {
+        if (!isDemoMode) {
+          console.error("[DASHBOARD] Chargement des données impossible:", err);
+          setMyJobs([]); setApps([]); setAllUsers([]); setCandidates([]);
+          return;
+        }
+        console.log("[DASHBOARD] Données de démonstration (mode DEV)", err);
+        // Populating offline/simulated local data based on role
+        if (profile.role === 'admin') {
+          setAllUsers([
+            {
+              uid: 'demo-candidate-uid-123',
+              role: 'candidate',
+              displayName: 'Marie Kouassi',
+              email: 'marie.k@gmail.com',
+              photoURL: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=200&auto=format&fit=crop',
+              skills: ["Plomberie", "Dépannage"],
+              isVerified: true,
+              isPremium: false,
+              averageRating: 4.8,
+              reviewCount: 3,
+              createdAt: new Date().toISOString()
+            },
+            {
+              uid: 'demo-employer-uid-456',
+              role: 'employer',
+              displayName: 'Société Ivoire Prestige',
+              email: 'employer@ivoiresource.ci',
+              photoURL: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?q=80&w=200&auto=format&fit=crop',
+              skills: [],
+              isVerified: true,
+              isPremium: true,
+              averageRating: 0,
+              reviewCount: 0,
+              createdAt: new Date().toISOString()
+            }
+          ]);
+          
+          const localJobs = JSON.parse(localStorage.getItem('offline_jobs') || '[]');
+          const defaultDemoJobs = [
+            {
+              id: 'demo-0',
+              employerId: 'system',
+              title: 'Réparation d’une fuite (Cocody)',
+              description: 'Fuite d’eau sous un évier de cuisine, intervention rapide souhaitée.',
+              category: 'plomberie',
+              location: 'Abidjan',
+              budget: 25000,
+              status: 'approved',
+              isPremium: true,
+              createdAt: new Date().toISOString()
+            }
+          ];
+          setMyJobs(localJobs.length > 0 ? localJobs : defaultDemoJobs);
+
+          const localApps = JSON.parse(localStorage.getItem('offline_applications') || '[]');
+          const defaultDemoApps = [
+            {
+              id: 'local-app-1',
+              jobId: 'demo-0',
+              employerId: 'system',
+              candidateId: 'demo-candidate-uid-123',
+              status: 'pending',
+              message: "Bonjour, j'ai 3 ans d'expérience dans la garde de très jeunes enfants et d'entretien de maison.",
+              candidateName: 'Marie Kouassi',
+              photoURL: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=200&auto=format&fit=crop',
+              experienceYears: 3,
+              cvName: 'Mon_CV.pdf',
+              cvUrl: '#',
+              createdAt: new Date().toISOString()
+            }
+          ];
+          setApps(localApps.length > 0 ? localApps : defaultDemoApps);
+        }
+
+        if (profile.role === 'employer') {
+          setCandidates([
+            {
+              uid: 'demo-candidate-uid-123',
+              role: 'candidate',
+              displayName: 'Marie Kouassi',
+              email: 'marie.k@gmail.com',
+              photoURL: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=200&auto=format&fit=crop',
+              skills: ["Plomberie", "Dépannage"],
+              isVerified: true,
+              isPremium: false,
+              averageRating: 4.8,
+              reviewCount: 3,
+              createdAt: new Date().toISOString(),
+              verificationDocs: [
+                { name: 'CNI_Marie_Kouassi.pdf', type: 'cni_passport', status: 'approved', uploadedAt: new Date().toISOString() }
+              ]
+            }
+          ]);
+
+          const localJobs = JSON.parse(localStorage.getItem('offline_jobs') || '[]');
+          setMyJobs(localJobs.filter((j: any) => j.employerId === profile.uid));
+
+          const localApps = JSON.parse(localStorage.getItem('offline_applications') || '[]');
+          setApps(localApps.filter((a: any) => a.employerId === profile.uid));
+        }
+
+        if (profile.role === 'candidate') {
+          const localApps = JSON.parse(localStorage.getItem('offline_applications') || '[]');
+          setApps(localApps.filter((a: any) => a.candidateId === profile.uid));
+        }
+      } finally {
+        setLoadingData(false);
+      }
+    };
+
+    fetchData();
+  }, [user, profile, activeTab, adminLimit]);
+
+  // Paiements (admin) : la table n'est accessible que par le serveur.
+  const loadPayments = async () => {
+    setPaymentsLoading(true);
+    try {
+      const res = await missionService.adminListPayments(0);
+      setPayments(res.payments);
+      setPaymentsTotal(res.total);
+    } catch (err: any) {
+      console.error('[ADMIN] paiements indisponibles', err);
+    } finally {
+      setPaymentsLoading(false);
+    }
+  };
+  useEffect(() => {
+    const demo = import.meta.env.DEV && (profile?.uid?.startsWith('demo-') ?? false);
+    if (profile?.role === 'admin' && activeTab === 'admin' && !demo) loadPayments();
+  }, [profile?.role, activeTab, adminTab]);
+
   const viewCandidate = async (candidateId: string, app?: Application) => {
     // Les coordonnées d'un artisan ne sont visibles que de l'administration : les clients passent par la plateforme.
     if (profile?.role !== 'admin') return;
