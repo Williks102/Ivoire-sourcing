@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { audit, protect, sendError } from './_lib/security.js';
 import { z } from 'zod';
+import { initialize as paystackInit, useStack } from './_lib/paystack.js';
 import { HttpError, MISSION_STATUS, db, readBody, splitPrice } from './_lib/server.js';
 
 /**
@@ -29,7 +30,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!parsed.success) return res.status(400).json({ error: 'Données invalides' });
     const { missionId, channel, phoneNumber } = parsed.data;
 
-    if (channel !== 'CARD' && !phoneNumber) {
+    const paystack = useStack();
+    if (!paystack && channel !== 'CARD' && !phoneNumber) {
       return res.status(400).json({ error: 'Le numéro Mobile Money est obligatoire.' });
     }
 
@@ -44,9 +46,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!(amount > 0)) throw new HttpError(409, 'Aucun prix convenu pour cette mission.');
 
     const merchantId = process.env.PAIEMENTPRO_MERCHANT_ID || '';
-    if (!merchantId) throw new HttpError(500, "Le serveur n'est pas lié à un identifiant de marchand Paiement Pro.");
+    if (!paystack && !merchantId) throw new HttpError(500, "Le serveur n'est pas lié à un identifiant de marchand Paiement Pro.");
     const webhookSecret = process.env.PAYMENT_WEBHOOK_SECRET || '';
-    if (!webhookSecret) throw new HttpError(500, 'PAYMENT_WEBHOOK_SECRET non configuré.');
+    if (!paystack && !webhookSecret) throw new HttpError(500, 'PAYMENT_WEBHOOK_SECRET non configuré.');
 
     const referenceNumber = `IVS-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`;
     const baseUrl = process.env.APP_URL || (process.env.VERCEL_URL && `https://${process.env.VERCEL_URL}`) || '';
@@ -62,10 +64,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       amount,
       commission,
       payout,
-      channel,
+      channel: paystack ? 'PAYSTACK' : channel,
       status: 'initiated',
       createdAt: new Date().toISOString(),
     });
+
+    if (paystack) {
+      try {
+        const { url } = await paystackInit({
+          email: user.email, amountXof: amount, reference: referenceNumber,
+          callbackUrl: `${baseUrl}/?payment=${encodeURIComponent(referenceNumber)}`,
+          metadata: { app: 'ivoiresource', missionId: mission.$id },
+        });
+        await audit(req, user.$id, 'payment.init', referenceNumber, { mission: mission.$id, amount, channel: 'PAYSTACK' });
+        return res.status(200).json({ success: true, paymentUrl: url, referenceNumber, amount, commission, payout });
+      } catch (error) {
+        await db.update('payments', referenceNumber, { status: 'failed' }).catch(() => {});
+        throw error;
+      }
+    }
 
     const [firstName = 'Client', ...rest] = (user.name || 'Client IvoireSource').split(' ');
     const paymentPayload = {
