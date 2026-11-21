@@ -1458,8 +1458,10 @@ export function DashboardView({
                                   <p className="text-xs mt-1 text-slate-600">À reverser <b className="text-emerald-700">{formatFcfa(job.artisanPayout)}</b> <span className="text-slate-400">(prix {formatFcfa(job.agreedPrice)} − commission {formatFcfa(job.commissionAmount)})</span></p>
                                   {(() => {
                                     const art = allUsers.find(u => u.uid === job.assignedArtisanId);
-                                    const op = job.payoutOperator || art?.payoutOperator;
-                                    const num = job.payoutPhone || art?.payoutPhone;
+                                    // Compte figé au paiement ; à défaut, celui du profil actuel de l'artisan.
+                                    const paid = payments.find(p => p.jobId === job.id && p.status === 'success');
+                                    const op = paid?.payoutOperator || art?.payoutOperator;
+                                    const num = paid?.payoutPhone || art?.payoutPhone;
                                     return num
                                       ? <p className="text-xs mt-1 font-bold text-slate-800">📲 Payer sur {payoutLabel(op)} : <span className="select-all">{num}</span></p>
                                       : <p className="text-xs mt-1 font-bold text-amber-600">⚠️ Aucun numéro de reversement renseigné : demandez-le à l'artisan.</p>;

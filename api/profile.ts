@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { db, readBody, sanitizeText } from './_lib/server.js';
 import { audit, protect, sendError } from './_lib/security.js';
 import { notifyUser } from './_lib/telegram.js';
-import { botUsername, ensureWebhook, makeLinkToken, telegramConfigured } from './_lib/telegram.js';
+import { botUsername, ensureWebhook, makeLinkToken, newLinkNonce, telegramConfigured } from './_lib/telegram.js';
 
 /**
  * Création et mise à jour du profil — commandements #2 et #3 du guide (« ne jamais faire confiance au client »).
@@ -45,7 +45,7 @@ const Schema = z.discriminatedUnion('action', [
 
 /** Ce que le navigateur reçoit : jamais de champ système Appwrite, rôle admin uniquement d'après le label. */
 function present(row: any, isAdmin: boolean) {
-  const clean: Record<string, unknown> = Object.fromEntries(Object.entries(row).filter(([k]) => !k.startsWith('$') && k !== 'telegramChatId'));
+  const clean: Record<string, unknown> = Object.fromEntries(Object.entries(row).filter(([k]) => !k.startsWith('$') && k !== 'telegramChatId' && k !== 'telegramLinkNonce'));
   let verificationDocs: unknown = clean.verificationDocs;
   if (typeof verificationDocs === 'string') { try { verificationDocs = JSON.parse(verificationDocs); } catch { verificationDocs = []; } }
   return { ...clean, uid: row.$id, telegramLinked: !!row.telegramChatId, verificationDocs, role: isAdmin ? 'admin' : row.role === 'admin' ? 'candidate' : row.role };
@@ -104,7 +104,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
       if (!telegramConfigured()) return res.status(503).json({ error: "Les notifications Telegram ne sont pas encore activées sur ce site." });
       await ensureWebhook();
-      const url = `https://t.me/${await botUsername()}?start=${makeLinkToken(user.$id)}`;
+      const nonce = newLinkNonce();
+      await db.update('users', user.$id, { telegramLinkNonce: nonce });
+      const url = `https://t.me/${await botUsername()}?start=${makeLinkToken(user.$id, nonce)}`;
       return res.status(200).json({ success: true, url });
     }
 

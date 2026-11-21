@@ -43,7 +43,8 @@ export async function settlePayment(req: VercelRequest, reference: string, statu
     const paidAt = new Date().toISOString();
     // Le compte de reversement est figé au moment du paiement : un changement ultérieur ne redirige pas cet argent.
     const artisan = await db.get('users', payment.artisanId).catch(() => null);
-    await db.update('payments', reference, { status: 'success', paidAt, gatewayStatus: status.slice(0, 40) });
+    // Le numéro est écrit sur le PAIEMENT (table sans droit côté navigateur), jamais sur la mission (lisible par tous).
+    await db.update('payments', reference, { status: 'success', paidAt, gatewayStatus: status.slice(0, 40), payoutOperator: artisan?.payoutOperator || '', payoutPhone: artisan?.payoutPhone || '' });
     await db.update('jobs', mission.$id, {
       status: MISSION_STATUS.PAID,
       paidAt,
@@ -51,8 +52,6 @@ export async function settlePayment(req: VercelRequest, reference: string, statu
       commissionAmount: payment.commission,
       artisanPayout: payment.payout,
       payoutStatus: 'pending', // reversement à l'artisan à effectuer
-      payoutOperator: artisan?.payoutOperator || '',
-      payoutPhone: artisan?.payoutPhone || '',
     });
 
     await audit(req, 'gateway', 'payment.success', reference, { mission: mission.$id, amount: payment.amount });

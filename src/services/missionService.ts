@@ -39,6 +39,9 @@ export interface AdminPayment {
   status: 'initiated' | 'success' | 'failed' | 'mismatch';
   createdAt: string;
   paidAt?: string;
+  /** Compte de reversement de l'artisan, figé au paiement (lisible par l'admin uniquement). */
+  payoutOperator?: string;
+  payoutPhone?: string;
 }
 const withId = <T,>(doc: any) => ({ id: doc.$id, ...doc }) as T;
 
