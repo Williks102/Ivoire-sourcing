@@ -125,7 +125,7 @@ export const missionService = {
   // --- Profil et pièces justificatives (écritures par le serveur uniquement) ---
   ensureProfile: (role: 'employer' | 'candidate', displayName?: string) =>
     authFetch<{ profile: UserProfile }>('/api/profile', { action: 'ensure', role, displayName }),
-  updateProfile: (fields: Partial<Pick<UserProfile, 'displayName' | 'bio' | 'location' | 'phone' | 'skills' | 'trades' | 'experienceYears' | 'serviceCities' | 'whatsappConsent' | 'businessName' | 'businessRegistration'>>) =>
+  updateProfile: (fields: Partial<Pick<UserProfile, 'displayName' | 'bio' | 'location' | 'phone' | 'skills' | 'trades' | 'experienceYears' | 'serviceCities' | 'whatsappConsent' | 'payoutOperator' | 'payoutPhone' | 'businessName' | 'businessRegistration'>>) =>
     authFetch<{ profile: UserProfile }>('/api/profile', { action: 'update', fields }),
   telegramLink: () => authFetch<{ url: string }>('/api/profile', { action: 'telegramLink' }),
   telegramUnlink: () => authFetch<{ profile: UserProfile }>('/api/profile', { action: 'telegramUnlink' }),

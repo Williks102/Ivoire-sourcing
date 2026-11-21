@@ -47,3 +47,9 @@ Application du « Guide du Vibecoder Sécurisé » (règle d'or : *ne jamais fai
 1. Vercel → Deployments → promouvoir la dernière version saine.
 2. Appwrite → révoquer/recréer la clé API, mettre à jour `APPWRITE_API_KEY` dans Vercel, redéployer.
 3. Consulter `audit_logs`, restaurer depuis `backups/` si besoin.
+
+## Reversement aux artisans
+
+- Compte Mobile Money de l'artisan (opérateur + numéro) saisi dans son profil, validé par le serveur ; chaque changement est tracé (numéro tronqué dans le journal) et signalé à l'artisan sur Telegram.
+- Le compte est **figé sur la mission au moment du paiement** : un changement ultérieur ne redirige pas l'argent déjà encaissé.
+- L'admin voit « Payer sur <opérateur> : <numéro> » dans « Reversements à faire », envoie le transfert, saisit la référence puis marque « Reversement effectué » ; l'artisan est prévenu.

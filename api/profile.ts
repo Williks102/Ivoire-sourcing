@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { z } from 'zod';
 import { db, readBody, sanitizeText } from './_lib/server.js';
 import { audit, protect, sendError } from './_lib/security.js';
+import { notifyUser } from './_lib/telegram.js';
 import { botUsername, ensureWebhook, makeLinkToken, telegramConfigured } from './_lib/telegram.js';
 
 /**
@@ -29,6 +30,8 @@ const Fields = z.object({
   experienceYears: z.number().int().min(0).max(60),
   serviceCities: z.array(z.enum(CITIES)).max(7),
   whatsappConsent: z.boolean(),
+  payoutOperator: z.enum(['wave', 'orange', 'mtn', 'moov', '']),
+  payoutPhone: z.string().trim().max(30).regex(/^[0-9 +().-]*$/, 'Numéro invalide'),
   businessName: z.string().trim().max(120),
   businessRegistration: z.string().trim().max(60),
 }).partial().strict();
@@ -125,8 +128,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (f.whatsappConsent && !row.whatsappConsent) data.whatsappConsentAt = new Date().toISOString();
       if (!f.whatsappConsent) data.whatsappConsentAt = null;
     }
+    if (f.payoutOperator !== undefined) data.payoutOperator = f.payoutOperator;
+    if (f.payoutPhone !== undefined) data.payoutPhone = f.payoutPhone.replace(/\s+/g, '');
+    const payoutChanged = ('payoutOperator' in data && data.payoutOperator !== (row.payoutOperator || '')) || ('payoutPhone' in data && data.payoutPhone !== (row.payoutPhone || ''));
     const updated = await db.update('users', user.$id, data);
     await audit(req, user.$id, 'profile.update', user.$id, { fields: Object.keys(data) });
+    if (payoutChanged) {
+      // Le numéro de reversement est sensible (détournement de fonds en cas de piratage) : tracé et signalé à l'artisan.
+      await audit(req, user.$id, 'profile.payout.change', user.$id, { operator: String(data.payoutOperator ?? row.payoutOperator ?? ''), phoneEnd: String(data.payoutPhone ?? row.payoutPhone ?? '').slice(-3) });
+      await notifyUser(user.$id, '🔐 Votre numéro de reversement vient d’être modifié. Si ce n’est pas vous, changez votre mot de passe et contactez-nous.');
+    }
     return res.status(200).json({ success: true, profile: present(updated, isAdmin) });
   } catch (error: any) {
     return sendError(res, error, '[profile]');

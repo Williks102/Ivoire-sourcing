@@ -92,6 +92,8 @@ const COLLECTIONS: CollectionDef[] = [
       b('whatsappConsent'), s('whatsappConsentAt', 40),
       // Informations d'entreprise facultatives, reprises sur les devis et reçus :
       s('businessName', 120), s('businessRegistration', 60),
+      // Compte de reversement de l'artisan (Mobile Money) :
+      s('payoutOperator', 20), s('payoutPhone', 30),
       // Conversation Telegram reliée (notifications) : écrite par le serveur uniquement.
       s('telegramChatId', 32),
       // Liste de pièces au format JSON. À terme : stocker les fichiers dans Storage plutôt qu'en base64.
@@ -110,7 +112,7 @@ const COLLECTIONS: CollectionDef[] = [
       s('scheduledDate', 40), i('budget'), s('status', 20), s('createdAt', 40),
       // Renseignés par le serveur :
       s('assignedArtisanId', 64), s('assignedApplicationId', 64), i('agreedPrice'), s('assignedAt', 40), s('completedAt', 40),
-      s('paidAt', 40), s('paymentReference', 64), i('commissionAmount'), i('artisanPayout'), s('payoutStatus', 20),
+      s('paidAt', 40), s('paymentReference', 64), i('commissionAmount'), i('artisanPayout'), s('payoutStatus', 20), s('payoutOperator', 20), s('payoutPhone', 30),
       s('payoutSentAt', 40), s('payoutReference', 64),
       // Analyse IA à la publication :
       s('aiSummary', 200), s('aiTags', 40, true), s('aiMissing', 120, true), s('aiCategory', 40),

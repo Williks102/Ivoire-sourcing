@@ -59,6 +59,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (mission.status !== MISSION_STATUS.COMPLETED) throw new HttpError(409, 'Mission dans un état inattendu.');
 
     const paidAt = new Date().toISOString();
+    // Le compte de reversement est figé au moment du paiement : un changement ultérieur ne redirige pas cet argent.
+    const artisan = await db.get('users', payment.artisanId).catch(() => null);
     await db.update('payments', reference, { status: 'success', paidAt, gatewayStatus: status.slice(0, 40) });
     await db.update('jobs', mission.$id, {
       status: MISSION_STATUS.PAID,
@@ -67,6 +69,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       commissionAmount: payment.commission,
       artisanPayout: payment.payout,
       payoutStatus: 'pending', // reversement à l'artisan à effectuer
+      payoutOperator: artisan?.payoutOperator || '',
+      payoutPhone: artisan?.payoutPhone || '',
     });
 
     await audit(req, 'gateway', 'payment.success', reference, { mission: mission.$id, amount: payment.amount });
