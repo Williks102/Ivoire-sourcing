@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { db, readBody } from './server.js';
 import { audit, clientIp, rateLimit, sendError } from './security.js';
-import { isTelegramSecret, readLinkToken, sendTelegram, esc } from './telegram.js';
+import { isTelegramSecret, linkTokenValid, parseLinkToken, sendTelegram, esc } from './telegram.js';
 
 /**
  * Messages reçus par le bot. Appelé par api/webhook.ts quand l'en-tête secret de Telegram est présent
@@ -29,17 +29,18 @@ export async function handleTelegram(req: VercelRequest, res: VercelResponse) {
     const cmd = command.toLowerCase().split('@')[0];
 
     if (cmd === '/start' && arg) {
-      const uid = readLinkToken(arg);
-      if (!uid) {
+      const parsed = parseLinkToken(arg);
+      const profile = parsed ? await db.get('users', parsed.uid).catch(() => null) : null;
+      // Signature vérifiée avec l'aléa du profil : lien à usage unique, remplacé par tout nouveau lien.
+      if (!parsed || !profile || !linkTokenValid(parsed, profile.telegramLinkNonce)) {
         await sendTelegram(chatId, '⚠️ Ce lien a expiré ou n’est pas valide. Revenez sur le site et touchez à nouveau « Recevoir sur Telegram ».');
         return res.status(200).json({ ok: true });
       }
-      const profile = await db.get('users', uid).catch(() => null);
-      if (!profile) { await sendTelegram(chatId, '⚠️ Compte introuvable.'); return res.status(200).json({ ok: true }); }
+      const uid = parsed.uid;
       // Une conversation n'est reliée qu'à un seul compte.
       const previous = await db.listEqual('users', 'telegramChatId', chatId);
       await Promise.all(previous.filter((r) => r.$id !== uid).map((r) => db.update('users', r.$id, { telegramChatId: '' })));
-      await db.update('users', uid, { telegramChatId: chatId });
+      await db.update('users', uid, { telegramChatId: chatId, telegramLinkNonce: '' });
       await audit(req, uid, 'telegram.link', uid);
       await sendTelegram(chatId, `✅ <b>Notifications activées</b>${profile.displayName ? ` pour ${esc(profile.displayName)}` : ''}.\n\n${profile.role === 'candidate' ? 'Vous recevrez ici les missions de votre métier et de votre zone, ainsi que les réponses à vos offres.' : 'Vous serez prévenu ici des offres reçues et de l’avancement de vos missions.'}\n\nEnvoyez /stop pour les couper.`);
       return res.status(200).json({ ok: true });

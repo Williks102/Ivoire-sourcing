@@ -1,4 +1,4 @@
-import { createHmac } from 'node:crypto';
+import { createHmac, randomBytes } from 'node:crypto';
 import { HttpError, db, safeEqual } from './server.js';
 import { CATEGORY_LABELS, type ArtisanRow, type MissionLite } from './outreach.js';
 import { forPrompt, stripContacts } from './ai.js';
@@ -55,22 +55,32 @@ async function call(method: string, body: Record<string, unknown>): Promise<any>
 const b64 = (s: string) => Buffer.from(s).toString('base64url');
 const fromB64 = (s: string) => Buffer.from(s, 'base64url').toString();
 
-/** Paramètre `start` du lien t.me : base64url(uid|expiration) + 16 caractères de signature (64 caractères maximum). */
-export function makeLinkToken(uid: string, now = Date.now()): string {
+/**
+ * Paramètre `start` du lien t.me : base64url(uid|expiration) + 16 caractères de signature (64 caractères maximum).
+ * La signature couvre aussi un aléa (`nonce`) enregistré sur le profil : le lien ne fonctionne qu'**une seule fois**
+ * (l'aléa est effacé à l'utilisation) et un nouveau lien invalide les précédents.
+ */
+export function newLinkNonce(): string { return randomBytes(12).toString('hex'); }
+
+export function makeLinkToken(uid: string, nonce: string, now = Date.now()): string {
   const payload = b64(`${uid}|${(now + 24 * 3600 * 1000).toString(36)}`);
-  const sig = hmac('link:' + payload).slice(0, 16);
+  const sig = hmac(`link:${payload}:${nonce}`).slice(0, 16);
   const out = payload + sig;
   if (out.length > 64) throw new HttpError(500, 'Identifiant trop long pour le lien Telegram.');
   return out;
 }
 
-export function readLinkToken(value: unknown, now = Date.now()): string | null {
+/** Lit un lien sans le valider : renvoie le compte visé ; la signature se vérifie avec l'aléa du profil (`linkTokenValid`). */
+export function parseLinkToken(value: unknown, now = Date.now()): { uid: string; payload: string; sig: string } | null {
   if (typeof value !== 'string' || !/^[A-Za-z0-9_-]{20,64}$/.test(value) || !telegramConfigured()) return null;
   const payload = value.slice(0, -16);
-  if (!safeEqual(value.slice(-16), hmac('link:' + payload).slice(0, 16))) return null;
   const [uid, exp] = fromB64(payload).split('|');
   if (!uid || !exp || parseInt(exp, 36) < now) return null;
-  return uid;
+  return { uid, payload, sig: value.slice(-16) };
+}
+
+export function linkTokenValid(parsed: { payload: string; sig: string }, nonce: unknown): boolean {
+  return typeof nonce === 'string' && nonce.length > 0 && safeEqual(parsed.sig, hmac(`link:${parsed.payload}:${nonce}`).slice(0, 16));
 }
 
 let usernameCache = '';

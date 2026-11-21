@@ -93,9 +93,6 @@ export interface JobPost {
   payoutStatus?: 'pending' | 'sent';
   payoutSentAt?: string;
   payoutReference?: string;
-  /** Compte de reversement de l'artisan, figé au moment du paiement. */
-  payoutOperator?: string;
-  payoutPhone?: string;
   // Analyse IA faite à la publication (facultative) :
   aiSummary?: string;
   aiTags?: string[];

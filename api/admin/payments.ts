@@ -46,6 +46,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         status: p.status,
         createdAt: p.createdAt,
         paidAt: p.paidAt,
+        payoutOperator: p.payoutOperator || '',
+        payoutPhone: p.payoutPhone || '',
       }));
       return res.status(200).json({ success: true, payments, total });
     }
@@ -60,7 +62,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       payoutReference: sanitizeText(input.reference, 64),
     });
     await audit(req, user.$id, 'admin.payout.sent', mission.$id, { reference: sanitizeText(input.reference, 64) });
-    await notifyUser(mission.assignedArtisanId, `💸 <b>Reversement effectué</b>\nMission « ${esc(String(mission.title).slice(0, 80))} » : ${fcfa(mission.artisanPayout)} envoyés${mission.payoutOperator ? ` sur votre compte ${esc(mission.payoutOperator)}` : ''}.`);
+    const paid = mission.paymentReference ? await db.get('payments', mission.paymentReference).catch(() => null) : null;
+    await notifyUser(mission.assignedArtisanId, `💸 <b>Reversement effectué</b>\nMission « ${esc(String(mission.title).slice(0, 80))} » : ${fcfa(mission.artisanPayout)} envoyés${paid?.payoutOperator ? ` sur votre compte ${esc(paid.payoutOperator)}` : ''}.`);
     return res.status(200).json({ success: true });
   } catch (error: any) {
     return sendError(res, error, '[admin/payments]');
