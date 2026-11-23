@@ -31,6 +31,7 @@ import { missionService, AdminPayment } from '../services/missionService';
 import { UserProfile, JobPost, Application, UserRole } from '../types';
 import { CITIES, CATEGORIES, MISSION_STATUS_LABELS, formatFcfa } from '../constants';
 import { ClientMissionsPanel, ArtisanMissionsPanel } from './MissionsPanel';
+import { ErrorBoundary } from './ErrorBoundary';
 import { ArtisanProfileFields } from './ArtisanProfileFields';
 import { OutreachModal } from './OutreachModal';
 import { ArtisanRevenuePanel } from './ArtisanRevenuePanel';
@@ -1358,19 +1359,19 @@ export function DashboardView({
            )}
 
            {activeTab === 'my-jobs' && profile.role === 'employer' && (
-              <ClientMissionsPanel clientId={profile.uid} onPublish={() => setView('post-job')} />
+              <ErrorBoundary label="Mes missions"><ClientMissionsPanel clientId={profile.uid} onPublish={() => setView('post-job')} /></ErrorBoundary>
            )}
 
            {activeTab === 'quotes' && profile.role === 'candidate' && (
-              <QuotesPanel artisanId={profile.uid} />
+              <ErrorBoundary label="Mes devis"><QuotesPanel artisanId={profile.uid} /></ErrorBoundary>
            )}
 
            {activeTab === 'revenue' && profile.role === 'candidate' && (
-              <ArtisanRevenuePanel artisanId={profile.uid} />
+              <ErrorBoundary label="Mes revenus"><ArtisanRevenuePanel artisanId={profile.uid} /></ErrorBoundary>
            )}
 
            {activeTab === 'applications' && profile.role === 'candidate' && (
-              <ArtisanMissionsPanel artisanId={profile.uid} />
+              <ErrorBoundary label="Mes missions & offres"><ArtisanMissionsPanel artisanId={profile.uid} /></ErrorBoundary>
            )}
 
            {activeTab === 'admin' && profile.role === 'admin' && (

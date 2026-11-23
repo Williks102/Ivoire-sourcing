@@ -74,7 +74,7 @@ export function ClientMissionsPanel({ clientId, onPublish }: { clientId: string;
 
       {error && <p className="text-xs font-bold text-rose-600">{error}</p>}
       {loading ? (
-        <div className="animate-pulse space-y-3">{[1, 2].map(i => <div key={i} className="h-20 bg-slate-100 rounded-2xl" />)}</div>
+        <div className="space-y-3"><p className="text-xs font-bold text-slate-400">Chargement de vos missions…</p><div className="animate-pulse space-y-3">{[1, 2].map(i => <div key={i} className="h-20 bg-slate-200 rounded-2xl" />)}</div></div>
       ) : missions.length === 0 ? (
         <div className="text-center py-12 px-6 bg-slate-50 border border-dashed border-slate-200 rounded-[24px] space-y-2">
           <p className="font-bold text-slate-700 text-sm">Aucune mission pour le moment</p>
@@ -284,7 +284,7 @@ export function ArtisanMissionsPanel({ artisanId }: { artisanId: string }) {
 
       {error && <p className="text-xs font-bold text-rose-600">{error}</p>}
       {loading ? (
-        <div className="animate-pulse space-y-3">{[1, 2].map(i => <div key={i} className="h-20 bg-slate-100 rounded-2xl" />)}</div>
+        <div className="space-y-3"><p className="text-xs font-bold text-slate-400">Chargement de vos missions…</p><div className="animate-pulse space-y-3">{[1, 2].map(i => <div key={i} className="h-20 bg-slate-200 rounded-2xl" />)}</div></div>
       ) : (
         <>
           <section className="space-y-3">
