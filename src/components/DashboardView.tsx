@@ -31,6 +31,7 @@ import { missionService, AdminPayment } from '../services/missionService';
 import { UserProfile, JobPost, Application, UserRole } from '../types';
 import { CITIES, CATEGORIES, MISSION_STATUS_LABELS, formatFcfa } from '../constants';
 import { ClientMissionsPanel, ArtisanMissionsPanel } from './MissionsPanel';
+import { ErrorBoundary } from './ErrorBoundary';
 import { ArtisanProfileFields } from './ArtisanProfileFields';
 import { OutreachModal } from './OutreachModal';
 import { ArtisanRevenuePanel } from './ArtisanRevenuePanel';
@@ -1271,7 +1272,7 @@ export function DashboardView({
                    <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden">
                       <div className="p-8 border-b border-slate-50 flex items-center justify-between">
                          <h3 className="font-bold text-slate-800 tracking-tight">Activités récentes</h3>
-                         <button className="text-[10px] font-black text-emerald-600 uppercase tracking-widest hover:translate-x-1 transition-transform inline-flex items-center gap-1 cursor-pointer" onClick={() => setActiveTab('applications')}>Tout voir <ChevronRight className="h-3 w-3" /></button>
+                         <button className="text-[10px] font-black text-emerald-600 uppercase tracking-widest hover:translate-x-1 transition-transform inline-flex items-center gap-1 cursor-pointer" onClick={() => setActiveTab(profile.role === 'candidate' ? 'applications' : profile.role === 'employer' ? 'my-jobs' : 'admin')}>Tout voir <ChevronRight className="h-3 w-3" /></button>
                       </div>
                       <div className="p-8 space-y-6">
                          {apps.length === 0 ? (
@@ -1358,19 +1359,19 @@ export function DashboardView({
            )}
 
            {activeTab === 'my-jobs' && profile.role === 'employer' && (
-              <ClientMissionsPanel clientId={profile.uid} onPublish={() => setView('post-job')} />
+              <ErrorBoundary label="Mes missions"><ClientMissionsPanel clientId={profile.uid} onPublish={() => setView('post-job')} /></ErrorBoundary>
            )}
 
            {activeTab === 'quotes' && profile.role === 'candidate' && (
-              <QuotesPanel artisanId={profile.uid} />
+              <ErrorBoundary label="Mes devis"><QuotesPanel artisanId={profile.uid} /></ErrorBoundary>
            )}
 
            {activeTab === 'revenue' && profile.role === 'candidate' && (
-              <ArtisanRevenuePanel artisanId={profile.uid} />
+              <ErrorBoundary label="Mes revenus"><ArtisanRevenuePanel artisanId={profile.uid} /></ErrorBoundary>
            )}
 
            {activeTab === 'applications' && profile.role === 'candidate' && (
-              <ArtisanMissionsPanel artisanId={profile.uid} />
+              <ErrorBoundary label="Mes missions & offres"><ArtisanMissionsPanel artisanId={profile.uid} /></ErrorBoundary>
            )}
 
            {activeTab === 'admin' && profile.role === 'admin' && (
